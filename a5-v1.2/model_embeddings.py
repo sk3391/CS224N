@@ -42,11 +42,12 @@ class ModelEmbeddings(nn.Module):
         ### YOUR CODE HERE for part 1j
         self.e_char = 50
         self.max_word_length = 21
+        self.kernel_size = 5
         self.embed_size = embed_size
         pad_token_idx = vocab['<pad>']
         self.embeddings = nn.Embedding(len(vocab.char2id), self.e_char, padding_idx=pad_token_idx)
         self.dropout = nn.Dropout(p=0.3)
-        self.model_cnn = CNN(self.e_char, self.embed_size, self.max_word_length)
+        self.model_cnn = CNN(self.e_char, self.embed_size, self.max_word_length, self.kernel_size)
         self.model_highway = Highway(self.embed_size)
         ### END YOUR CODE
 

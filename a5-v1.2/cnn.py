@@ -20,14 +20,23 @@ class CNN(nn.Module):
         self.kernel_size = kernel_size
         self.max_word_length = max_word_length
         self.convnet = nn.Conv1d(e_char, embed_size, kernel_size)
+        #print(self.convnet.weight)
+        #print(self.convnet.bias)
         
     def forward(self, x_reshaped):
+        #print("x_reshaped = " + str(x_reshaped.size()))
         x_conv = self.convnet(x_reshaped)
         #print("x_conv = " + str(x_conv.size()))
+        #print("x_conv = ")
+        #print(x_conv)
         x_conv_relu = F.relu(x_conv)
         #print("x_conv_relu = " + str(x_conv_relu.size()))
+        #print("x_conv_relu = ")
+        #print(x_conv_relu)
         x_conv_out = F.max_pool1d(x_conv_relu, self.max_word_length - self.kernel_size + 1).permute(0,2,1)
         #print("x_conv_out = " + str(x_conv_out.size()))
+        #print("x_conv_out = ")
+        #print(x_conv_out)
         return x_conv_out
 ### END YOUR CODE
 
