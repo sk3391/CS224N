@@ -20,18 +20,25 @@ class Embedding(nn.Module):
 
     Args:
         word_vectors (torch.Tensor): Pre-trained word vectors.
+        char_vectors (torch.Tensor): Pre-trained character vectors.
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
     """
-    def __init__(self, word_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
         super(Embedding, self).__init__()
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors)
         self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
-    def forward(self, x):
-        emb = self.embed(x)   # (batch_size, seq_len, embed_size)
+    #def forward(self, x_w):
+    def forward(self, x_c, x_w):
+        emb = self.embed(x_w)   # (batch_size, seq_len, embed_size)
+        #### Added for char embedding
+        char_emb = self.char_embed(x_c) # (batch_size, seq_len, embed_size)
+        emb = torch.cat((char_emb, emb), 2)
+        ##########
         emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
