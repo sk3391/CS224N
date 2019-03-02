@@ -35,7 +35,9 @@ class BiDAF(nn.Module):
         #self.emb = layers.Embedding(word_vectors=word_vectors, 
          #                           hidden_size=hidden_size,
           #                          drop_prob=drop_prob)
+        
         self.emb = layers.Embedding(word_vectors=word_vectors, char_vectors = char_vectors, 
+                                    char_embed_size = 200,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)
 

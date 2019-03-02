@@ -13,7 +13,7 @@ from util import masked_softmax
 
 
 class Embedding(nn.Module):
-    """Embedding layer used by BiDAF, without the character-level component.
+    """Embedding layer used by BiDAF, with the character-level component.
 
     Word-level embeddings are further refined using a 2-layer Highway Encoder
     (see `HighwayEncoder` class for details).
@@ -24,12 +24,12 @@ class Embedding(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, char_embed_size, hidden_size, drop_prob):
         super(Embedding, self).__init__()
         self.drop_prob = drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
-        self.char_embed = nn.Embedding.from_pretrained(char_vectors)
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+        self.char_embed = CharEmbeddings(char_embed_size, char_vectors, drop_prob)
+        self.proj = nn.Linear(word_vectors.size(1)+char_embed_size, hidden_size, bias=False)
         self.hwy = HighwayEncoder(2, hidden_size)
 
     #def forward(self, x_w):
@@ -46,6 +46,85 @@ class Embedding(nn.Module):
         return emb
 
 
+################################Character Embeddings################################################
+class CharEmbeddings(nn.Module): 
+    """
+    Class that converts input words to their CNN-based embeddings.
+    """
+    def __init__(self, embed_size, char_vectors, drop_out, kernel_size = 7):
+        """
+        Init the Embedding layer for one language
+        @param embed_size (int): Embedding size (dimensionality) for the output 
+        @param vocab (VocabEntry): VocabEntry object. See vocab.py for documentation.
+        """
+        super(CharEmbeddings, self).__init__()
+        self.e_char = char_vectors.size(1)
+        self.embed_size = embed_size
+        self.kernel_size = kernel_size
+        self.dropout = nn.Dropout(p=drop_out)
+        self.embeddings = nn.Embedding.from_pretrained(char_vectors)
+        self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
+        self.model_highway = Highway(self.embed_size)
+
+    def forward(self, x):
+        """
+        Looks up character-based CNN embeddings for the words in a batch of sentences.
+        @param input: Tensor of integers of shape (batch_size, sentence_length, max_word_length) where
+            each integer is an index into the character vocabulary
+
+        @param output: Tensor of shape (batch_size, sentence_length, embed_size), containing the 
+            CNN-based embeddings for each word of the sentences in the batch
+        """
+        x_emb = self.embeddings(x)
+        (batch_size, sentence_length, max_word_length, e_char) = x_emb.size()
+        x_reshaped = (x_emb.view(batch_size*sentence_length, max_word_length, e_char)).permute(0,2,1)
+        x_conv_out = self.model_cnn(x_reshaped)
+        x_highway = self.model_highway(x_conv_out)
+        x_word_emb = self.dropout(x_highway).view(batch_size, sentence_length, self.embed_size)
+        return x_word_emb
+    
+class CNN(nn.Module):
+    def __init__(self, e_char, embed_size, kernel_size=7):
+        """Initializing Highway Network
+        @param embed_size (int): Embedding size (dimensionality)
+        """
+        super(CNN,self).__init__()
+        self.embed_size = embed_size
+        self.kernel_size = kernel_size
+        self.convnet = nn.Conv1d(e_char, embed_size, kernel_size)
+        
+    def forward(self, x):
+        x_conv = self.convnet(x)
+        x_conv_relu = F.relu(x_conv)
+        x_conv_out = F.max_pool1d(x_conv_relu, x.size(2) - self.kernel_size + 1).permute(0,2,1)
+        return x_conv_out
+
+class Highway(nn.Module):
+    def __init__(self, embed_size):
+        """Initializing Highway Network
+        @param embed_size (int): Embedding size (dimensionality)
+        """
+        super(Highway,self).__init__()
+        self.embed_size = embed_size
+        self.projection = nn.Linear(embed_size, embed_size)
+        self.gate = nn.Linear(embed_size, embed_size)
+        
+    def forward(self, x_conv_out):
+        """
+        Obtain xhighway by combining the projection with the skip-connection using gate
+        @param x_conv_out: Output Tensor of Conv1D of integers of shape (sentence_length * batch_size, 1, embed_size)
+
+        @param x_highway: Tensor of shape (sentence_length * batch_size, 1, embed_size), containing the 
+            combination of skip-connection with the projection
+        """
+        x_proj = F.relu(self.projection(x_conv_out))
+        x_gate = torch.sigmoid(self.gate(x_conv_out))
+        x_highway = torch.add(torch.mul(x_gate, x_proj), torch.mul((1.0 - x_gate), x_conv_out))
+        return x_highway
+        
+
+##################################End of Character Embeddings##############################################
+   
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
 
@@ -74,6 +153,40 @@ class HighwayEncoder(nn.Module):
 
         return x
 
+
+################################QANet Layers################################################
+#class DepthSepCNN(nn.Module):
+#    def __init__(self, in_channels, d_filters, kernel_size=7):
+#        """Initializing Depthwise Separable CNN Network
+#        Args:
+#            in_channel (int): Input Channel Size
+#            d_filters (int): number of filters
+#            kernel_size (int): Kernel Size
+#        """
+#        super(DepthSepCNN, self).__init__()
+#        self.in_channels = in_channels
+#        self.kernel_size = kernel_size
+#        self.d_filters = d_filters
+#        self.depthwise = nn.Conv1d(in_channels, in_channels, kernel_size = kernel_size)
+#        self.pointwise = nn.Conv1d(in_channels, d_filters, kernel_size = 1)
+#        
+#    def forward(self, x):
+#        x_conv = self.depthwise(x)
+#        x_conv_out = self.pointwise(x_conv)
+#        return x_conv_out
+
+#class SelfAttention(nn.Module):
+    
+    
+#class FeedForward(nn.Module):
+    
+    
+#class EmbeddingEncoder(nn.Module):
+    
+
+#class ModelEncoder(nn.Module):
+        
+##################################End of QANet Layers##############################################
 
 class RNNEncoder(nn.Module):
     """General-purpose layer for encoding a sequence using a bidirectional RNN.
