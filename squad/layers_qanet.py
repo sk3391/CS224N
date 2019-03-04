@@ -285,7 +285,7 @@ class SelfAttention(nn.Module):
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
         ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
-        out = torch.matmul(multihead, self.W_o.permute(1,0))
+        out = torch.matmul(multihead, self.W_o)
         out = torch.add(out, self.bias)
         out = F.dropout(out, self.drop_prob, self.training)
         ##print("Self Attention Final Output = " + str(out.size()))
