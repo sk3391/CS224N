@@ -257,14 +257,13 @@ class SelfAttention(nn.Module):
             W_v = nn.Parameter(torch.zeros(d_filters, self.d_v))
             nn.init.xavier_uniform_(W_v)
             self.W_v.append(W_v)
-        W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
-        nn.init.xavier_uniform_(W_o)
-        self.W_o = W_o
+        self.W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
+        nn.init.xavier_uniform_(self.W_o)
         self.bias = nn.Parameter(torch.zeros(1))
         
     def forward(self, x, mask):
         batch_size, sentence_length, _ = x.size()
-        att_heads = torch.zeros(self.n_heads, batch_size, sentence_length, self.d_v, device = self.device)
+        att_heads = torch.empty(self.n_heads, batch_size, sentence_length, self.d_v)#, device = self.device)
         #multihead = torch.zeros(batch_size, sentence_length, 0)
         normalize = 1 / math.sqrt(self.d_k)
         for i in range(self.n_heads):
@@ -301,8 +300,7 @@ class FeedForward(nn.Module):
         self.ffn = nn.Linear(self.d_filters, self.d_filters, bias = True)
     def forward(self, x):
         ##print("FFN x = " + str(x.size()))
-        out = F.relu(self.ffn(x))
-        out = self.ffn(out)
+        out = self.ffn(F.relu(self.ffn(x)))
         ##print("FFN x with relu = " + str(out.size()))
         out = F.dropout(out, self.drop_prob, self.training)
         ##print("FFN final = " + str(out.size()))
@@ -322,9 +320,8 @@ class LayerNorm(nn.Module):
         self.layer_norm = nn.LayerNorm(self.d_filters)
     def forward(self, x):
         ##print("LayerNorm x = " + str(x.size()))
-        x = self.layer_norm(x)
+        return self.layer_norm(x)
         ##print("LayerNorm output = " + str(x.size()))
-        return x
         
 class ResidualBlock(nn.Module):
     """Initializing Residual Block f(layernorm(x)) + x
