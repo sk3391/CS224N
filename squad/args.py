@@ -99,11 +99,23 @@ def get_train_args():
                         help='Number of steps between successive evaluations.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.5,
+                        default=0.001,#0.5,
                         help='Learning rate.')
+    parser.add_argument('--lr_warm_up',
+                        type=int,
+                        default=1000,#0.5,
+                        help='Learning rate Warm Up.')
+    parser.add_argument('--beta1',
+                        type=float,
+                        default=0.8,#0.5,
+                        help='Beta 1.')
+    parser.add_argument('--beta2',
+                        type=float,
+                        default=0.9999,#0.5,
+                        help='Beta 2.')
     parser.add_argument('--l2_wd',
                         type=float,
-                        default=0,
+                        default=3*10-7,
                         help='L2 weight decay.')
     parser.add_argument('--num_epochs',
                         type=int,
@@ -212,7 +224,7 @@ def add_train_test_args(parser):
                         help='Name to identify training or test run.')
     parser.add_argument('--max_ans_len',
                         type=int,
-                        default=15,
+                        default=30,
                         help='Maximum length of a predicted answer.')
     parser.add_argument('--num_workers',
                         type=int,
@@ -224,7 +236,7 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=64,
+                        default=32,#64,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',
@@ -233,7 +245,7 @@ def add_train_test_args(parser):
                         help='Whether to use SQuAD 2.0 (unanswerable) questions.')
     parser.add_argument('--hidden_size',
                         type=int,
-                        default=100,
+                        default=128,
                         help='Number of features in encoder hidden layers.')
     parser.add_argument('--num_visuals',
                         type=int,

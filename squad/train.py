@@ -13,11 +13,14 @@ import torch.optim as optim
 import torch.optim.lr_scheduler as sched
 import torch.utils.data as data
 import util
+import math
 
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+#from models import BiDAF
+from models_qanet import QANet
+#from QANet_Git import QANet
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -47,9 +50,11 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors, char_vectors = char_vectors,
-                  hidden_size=args.hidden_size,
-                  drop_prob=args.drop_prob)
+#    model = BiDAF(word_vectors=word_vectors, char_vectors = char_vectors,
+#                  hidden_size=args.hidden_size,
+#                  drop_prob=args.drop_prob)
+    #model = QANet(word_vectors, char_vectors,c_max_len = 400, q_max_len=50, d_model=128, train_cemb=False, pad=0, dropout=0.1, num_head=8)
+    model = QANet(word_vectors, char_vectors, char_embed_size = 200, hidden_size = 128, drop_prob_word = 0.1, drop_prob_char = 0.05, drop_prob=0.1)
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info('Loading checkpoint from {}...'.format(args.load_path))
@@ -68,9 +73,12 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adadelta(model.parameters(), args.lr,
-                               weight_decay=args.l2_wd)
-    scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
+    optimizer = optim.Adam(params = model.parameters(), lr = args.lr, betas = (args.beta1, args.beta2), eps = 1e-8, weight_decay = 3e-7)
+    cr = 1.0 / math.log(args.lr_warm_up)
+    scheduler = sched.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log(ee+1) if ee < args.lr_warm_up else 1)
+    #optimizer = optim.Adadelta(model.parameters(), args.lr,
+    #                           weight_decay=args.l2_wd)
+    #scheduler = sched.LambdaLR(optimizer, lambda s: 1.)  # Constant LR
 
     # Get data loader
     log.info('Building dataset...')

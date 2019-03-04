@@ -36,7 +36,7 @@ class Embedding(nn.Module):
     def forward(self, x_c, x_w):
         emb = self.embed(x_w)   # (batch_size, seq_len, embed_size)
         #### Added for char embedding
-        char_emb = self.char_embed(x_c) # (batch_size, seq_len, embed_size)
+        char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
         emb = torch.cat((char_emb, emb), 2)
         ##########
         emb = F.dropout(emb, self.drop_prob, self.training)
@@ -51,7 +51,7 @@ class CharEmbeddings(nn.Module):
     """
     Class that converts input words to their CNN-based embeddings.
     """
-    def __init__(self, embed_size, char_vectors, drop_out, kernel_size = 7):
+    def __init__(self, embed_size, char_vectors, drop_prob, kernel_size = 7):
         """
         Init the Embedding layer for one language
         @param embed_size (int): Embedding size (dimensionality) for the output 
@@ -61,7 +61,7 @@ class CharEmbeddings(nn.Module):
         self.e_char = char_vectors.size(1)
         self.embed_size = embed_size
         self.kernel_size = kernel_size
-        self.dropout = nn.Dropout(p=drop_out)
+        self.dropout = nn.Dropout(p=drop_prob)
         self.embeddings = nn.Embedding.from_pretrained(char_vectors)
         self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
         self.model_highway = Highway(self.embed_size)
@@ -85,7 +85,7 @@ class CharEmbeddings(nn.Module):
     
 class CNN(nn.Module):
     def __init__(self, e_char, embed_size, kernel_size=7):
-        """Initializing Highway Network
+        """Initializing CNN Network
         @param embed_size (int): Embedding size (dimensionality)
         """
         super(CNN,self).__init__()
@@ -152,41 +152,6 @@ class HighwayEncoder(nn.Module):
             x = g * t + (1 - g) * x
 
         return x
-
-
-################################QANet Layers################################################
-#class DepthSepCNN(nn.Module):
-#    def __init__(self, in_channels, d_filters, kernel_size=7):
-#        """Initializing Depthwise Separable CNN Network
-#        Args:
-#            in_channel (int): Input Channel Size
-#            d_filters (int): number of filters
-#            kernel_size (int): Kernel Size
-#        """
-#        super(DepthSepCNN, self).__init__()
-#        self.in_channels = in_channels
-#        self.kernel_size = kernel_size
-#        self.d_filters = d_filters
-#        self.depthwise = nn.Conv1d(in_channels, in_channels, kernel_size = kernel_size)
-#        self.pointwise = nn.Conv1d(in_channels, d_filters, kernel_size = 1)
-#        
-#    def forward(self, x):
-#        x_conv = self.depthwise(x)
-#        x_conv_out = self.pointwise(x_conv)
-#        return x_conv_out
-
-#class SelfAttention(nn.Module):
-    
-    
-#class FeedForward(nn.Module):
-    
-    
-#class EmbeddingEncoder(nn.Module):
-    
-
-#class ModelEncoder(nn.Module):
-        
-##################################End of QANet Layers##############################################
 
 class RNNEncoder(nn.Module):
     """General-purpose layer for encoding a sequence using a bidirectional RNN.
