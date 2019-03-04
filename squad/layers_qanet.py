@@ -262,8 +262,8 @@ class SelfAttention(nn.Module):
         
     def forward(self, x, mask):
         batch_size, sentence_length, _ = x.size()
-        att_heads = torch.zeros(batch_size, sentence_length, self.d_v)
-        multihead = torch.zeros(batch_size, sentence_length, 0)
+        att_heads = torch.zeros(self.n_heads, batch_size, sentence_length, self.d_v)
+        #multihead = torch.zeros(batch_size, sentence_length, 0)
         normalize = 1 / math.sqrt(self.d_k)
         for i in range(self.n_heads):
             Q = torch.add(torch.matmul(x, self.W_q[i]), self.bias)
@@ -279,9 +279,10 @@ class SelfAttention(nn.Module):
             ##print("Self Attention Mask = " + str(mask.size()))
             out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
             ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
-            att_heads = torch.bmm(out, V)
+            att_heads[i,:,:,:] = torch.bmm(out, V)
             ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
-            multihead = torch.cat((att_heads, multihead), dim = 2)
+            #multihead = torch.cat((att_heads, multihead), dim = 2)
+        multihead = att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
         ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
         out = F.dropout(torch.add(torch.matmul(multihead, self.W_o.permute(1,0)), self.bias), self.drop_prob, self.training)
         ##print("Self Attention Final Output = " + str(out.size()))
