@@ -30,19 +30,18 @@ class QANet(nn.Module):
         hidden_size (int): Number of features in the hidden state at each layer.
         drop_prob (float): Dropout probability.
     """
-    def __init__(self, word_vectors, char_vectors, char_embed_size, hidden_size = 128, drop_prob_word = 0.1, drop_prob_char = 0.05, drop_prob=0.1):
+    def __init__(self, device, word_vectors, char_vectors, char_embed_size, hidden_size = 128, drop_prob_word = 0.1, drop_prob_char = 0.05, drop_prob=0.1):
         super(QANet, self).__init__()
         
         self.emb = layers_qanet.Embedding(word_vectors = word_vectors, char_vectors = char_vectors, hidden_size = hidden_size,
                                     char_embed_size = char_embed_size, drop_prob_word = drop_prob_word, 
                                     drop_prob_char = drop_prob_char, drop_prob = drop_prob)
 
-        self.enc = layers_qanet.EmbeddingEncoder(d_filters=hidden_size, drop_prob=drop_prob, n_conv=4, 
-                                                 kernel_size=7, n_blocks=1, embed_size = word_vectors.size(1) + char_embed_size)
+        self.enc = layers_qanet.EmbeddingEncoder(device = device, d_filters=hidden_size, drop_prob=drop_prob, n_conv=4, kernel_size=7, n_blocks=1, embed_size = word_vectors.size(1) + char_embed_size)
 
         self.att = layers_qanet.CQAttention(hidden_size=hidden_size, drop_prob=drop_prob)
 
-        self.mod = layers_qanet.ModelEncoder(n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 7)
+        self.mod = layers_qanet.ModelEncoder(device = device, n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 7)
 
         self.out = layers_qanet.QANetOutput(hidden_size=2*hidden_size, drop_prob=drop_prob)
 
