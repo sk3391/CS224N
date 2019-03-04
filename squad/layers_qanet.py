@@ -256,8 +256,9 @@ class SelfAttention(nn.Module):
             W_v = nn.Parameter(torch.zeros(d_filters, self.d_v))
             nn.init.xavier_uniform_(W_v)
             self.W_v.append(W_v)
-        self.W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
-        nn.init.xavier_uniform_(self.W_o)
+        W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
+        nn.init.xavier_uniform_(W_o)
+        self.W_o = W_o
         self.bias = nn.Parameter(torch.zeros(1))
         
     def forward(self, x, mask):
