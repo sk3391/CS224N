@@ -237,7 +237,7 @@ class SelfAttention(nn.Module):
     by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, 
     Llion Jones, Aidan N. Gomez, Lukasz Kaiser, Illia Polosukhin
     (https://arxiv.org/pdf/1706.03762.pdf)"""
-    def __init__(self, device, drop_prob, d_filters = 128, n_heads = 8):
+    def __init__(self, drop_prob, d_filters = 128, n_heads = 8):
         super(SelfAttention, self).__init__()
         self.n_heads = n_heads
         self.d_v = d_filters // n_heads
@@ -256,9 +256,9 @@ class SelfAttention(nn.Module):
             W_v = nn.Parameter(torch.zeros(d_filters, self.d_v))
             nn.init.xavier_uniform_(W_v)
             self.W_v.append(W_v)
-        W_o = nn.Parameter(torch.zeros((d_filters, self.d_v * n_heads), device = device))
-        nn.init.xavier_uniform_(W_o)
-        self.W_o = W_o
+        self.W_o = nn.Linear(d_filters, d_filters)#nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
+        #nn.init.xavier_uniform_(W_o)
+        #self.W_o = W_o
         self.bias = nn.Parameter(torch.zeros(1))
         
     def forward(self, x, mask):
@@ -285,8 +285,8 @@ class SelfAttention(nn.Module):
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
         ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
-        out = torch.matmul(multihead, self.W_o)
-        out = torch.add(out, self.bias)
+        out = self.W_o(multihead)
+        #out = torch.add(out, self.bias)
         out = F.dropout(out, self.drop_prob, self.training)
         ##print("Self Attention Final Output = " + str(out.size()))
         return out
@@ -341,16 +341,15 @@ class ResidualBlock(nn.Module):
 
 class EncoderBlock(nn.Module):
     """"Initializing Encoder Block"""
-    def __init__(self, device, n_conv, kernel_size, d_filters = 128, drop_prob = 0.1):
+    def __init__(self, n_conv, kernel_size, d_filters = 128, drop_prob = 0.1):
         super(EncoderBlock, self).__init__()
         self.drop_prob = drop_prob
         self.n_conv = n_conv
         self.d_filters = d_filters
-        self.device=device
         self.pos_enc = PositionalEncoding(self.d_filters, self.drop_prob)
         self.layernorm = nn.ModuleList([LayerNorm(self.drop_prob, self.d_filters) for i in range(self.n_conv+2)])
         self.conv = nn.ModuleList([DepthSepCNN(self.drop_prob, self.d_filters, self.d_filters, kernel_size) for i in range(self.n_conv)])
-        self.self_attention = SelfAttention(self.device, self.drop_prob, self.d_filters)
+        self.self_attention = SelfAttention(self.drop_prob, self.d_filters)
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
         self.residual = ResidualBlock(self.drop_prob)
     def forward(self, x, mask):
@@ -378,13 +377,12 @@ class EncoderBlock(nn.Module):
     
 class EmbeddingEncoder(nn.Module):
     """Create Embedding Encoder Block"""
-    def __init__(self, device, n_conv, kernel_size, d_filters, drop_prob, n_blocks=1, embed_size = 500):
+    def __init__(self, n_conv, kernel_size, d_filters, drop_prob, n_blocks=1, embed_size = 500):
         super(EmbeddingEncoder, self).__init__()
         self.n_blocks = n_blocks
         self.n_conv = n_conv
-        self.device = device
         #self.conv = DepthSepCNN(drop_prob, embed_size, d_filters, kernel_size)
-        self.enc_blocks = EncoderBlock(device, n_conv, kernel_size, d_filters, drop_prob)
+        self.enc_blocks = EncoderBlock(n_conv, kernel_size, d_filters, drop_prob)
         #self.enc_blocks = nn.ModuleList([EncoderBlock(n_conv, kernel_size, d_filters, drop_prob) for i in range(n_blocks)])
     def forward(self, x, mask):
         ##print("Embedding Encoder Input = " + str(x.size()))
@@ -398,15 +396,14 @@ class EmbeddingEncoder(nn.Module):
 
 class ModelEncoder(nn.Module):
     """Create Model Encoder Block"""
-    def __init__(self, device, n_conv, kernel_size, d_filters = 128, drop_prob = 0.1, n_blocks = 7):
+    def __init__(self, n_conv, kernel_size, d_filters = 128, drop_prob = 0.1, n_blocks = 7):
         super(ModelEncoder, self).__init__()
         self.n_conv = n_conv
         self.n_blocks = n_blocks
         self.drop_prob = drop_prob
-        self.device = device
         self.conv = DepthSepCNN(drop_prob, d_filters*4, d_filters, kernel_size)
         #self.enc_blocks = EncoderBlock(n_conv, kernel_size, d_filters, drop_prob)
-        self.enc_blocks = nn.ModuleList([EncoderBlock(device, n_conv, kernel_size, d_filters, drop_prob) for i in range(3)])
+        self.enc_blocks = nn.ModuleList([EncoderBlock(n_conv, kernel_size, d_filters, drop_prob) for i in range(3)])
     def forward(self, x, mask):
         ##print("Model Encoder Input = " + str(x.size()))
         x = self.conv(x.permute(0,2,1)).permute(0,2,1)
