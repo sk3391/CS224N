@@ -231,6 +231,90 @@ class DepthSepCNN(nn.Module):
         ##print("x after pointwise CNN = " + str(x_conv_out.size()))
         return x_conv_out
 
+class SelfAttention1(nn.Module):
+    def __init__(self, d_model, num_head, dropout):
+        super().__init__()
+        self.d_model = d_model
+        self.num_head = num_head
+        self.dropout = dropout
+        self.mem_conv = nn.Conv1d(in_channels=d_model, out_channels=d_model*2, kernel_size=1)
+        self.query_conv = nn.Conv1d(in_channels=d_model, out_channels=d_model, kernel_size=1)
+
+        bias = torch.empty(1)
+        nn.init.constant_(bias, 0)
+        self.bias = nn.Parameter(bias)
+
+    def forward(self, queries, mask):
+        queries = queries.transpose(1,2)
+        memory = queries
+
+        memory = self.mem_conv(memory)
+        query = self.query_conv(queries)
+        memory = memory.transpose(1, 2)
+        query = query.transpose(1, 2)
+        Q = self.split_last_dim(query, self.num_head)
+        K, V = [self.split_last_dim(tensor, self.num_head) for tensor in torch.split(memory, self.d_model, dim=2)]
+
+        key_depth_per_head = self.d_model // self.num_head
+        Q *= key_depth_per_head**-0.5
+        x = self.dot_product_attention(Q, K, V, mask = mask)
+        return self.combine_last_two_dim(x.permute(0,2,1,3))
+
+    def dot_product_attention(self, q, k ,v, bias = False, mask = None):
+        """dot-product attention.
+        Args:
+        q: a Tensor with shape [batch, heads, length_q, depth_k]
+        k: a Tensor with shape [batch, heads, length_kv, depth_k]
+        v: a Tensor with shape [batch, heads, length_kv, depth_v]
+        bias: bias Tensor (see attention_bias())
+        is_training: a bool of training
+        scope: an optional string
+        Returns:
+        A Tensor.
+        """
+        logits = torch.matmul(q,k.permute(0,1,3,2))
+        if bias:
+            logits += self.bias
+        if mask is not None:
+            shapes = [x  if x != None else -1 for x in list(logits.size())]
+            mask = mask.view(shapes[0], 1, 1, shapes[-1])
+            logits = mask_logits(logits, mask)
+        weights = F.softmax(logits, dim=-1)
+        # dropping out the attention links for each of the heads
+        weights = F.dropout(weights, p=self.dropout, training=self.training)
+        return torch.matmul(weights, v)
+
+    def split_last_dim(self, x, n):
+        """Reshape x so that the last dimension becomes two dimensions.
+        The first of these two dimensions is n.
+        Args:
+        x: a Tensor with shape [..., m]
+        n: an integer.
+        Returns:
+        a Tensor with shape [..., n, m/n]
+        """
+        old_shape = list(x.size())
+        last = old_shape[-1]
+        new_shape = old_shape[:-1] + [n] + [last // n if last else None]
+        ret = x.view(new_shape)
+        return ret.permute(0, 2, 1, 3)
+
+    def combine_last_two_dim(self, x):
+        """Reshape x so that the last two dimension become one.
+        Args:
+        x: a Tensor with shape [..., a, b]
+        Returns:
+        a Tensor with shape [..., ab]
+        """
+        old_shape = list(x.size())
+        a, b = old_shape[-2:]
+        new_shape = old_shape[:-2] + [a * b if a and b else None]
+        ret = x.contiguous().view(new_shape)
+        return ret
+def mask_logits(target, mask):
+    mask = mask.type(torch.float32)
+    return target * mask + (1 - mask) * (-1e30)
+
 class SelfAttention(nn.Module):
     """Implementing Multi-head Attention.
     Based on the paper:
@@ -276,7 +360,7 @@ class SelfAttention(nn.Module):
             ##print("Self Attention V = " + str(V.size()))
             out = torch.bmm(Q, K.permute(0,2,1))
             ##print("Self Attention QK.T = " + str(out.size()))
-            out = torch.mul(out, normalize)
+            out = out * normalize
             ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
             ##print("Self Attention Mask = " + str(mask.size()))
             out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
@@ -349,7 +433,7 @@ class EncoderBlock(nn.Module):
         self.pos_enc = PositionalEncoding(self.d_filters, self.drop_prob)
         self.layernorm = nn.ModuleList([LayerNorm(self.drop_prob, self.d_filters) for i in range(self.n_conv+2)])
         self.conv = nn.ModuleList([DepthSepCNN(self.drop_prob, self.d_filters, self.d_filters, kernel_size) for i in range(self.n_conv)])
-        self.self_attention = SelfAttention(self.device, self.drop_prob, self.d_filters)
+        self.self_attention = SelfAttention1(d_filters, 8, drop_prob)#SelfAttention(self.device, self.drop_prob, self.d_filters)
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
         self.residual = ResidualBlock(self.drop_prob)
     def forward(self, x, mask):
@@ -405,27 +489,27 @@ class ModelEncoder(nn.Module):
         self.device = device
         self.conv = DepthSepCNN(drop_prob, d_filters*4, d_filters, kernel_size)
         #self.enc_blocks = EncoderBlock(n_conv, kernel_size, d_filters, drop_prob)
-        self.enc_blocks = nn.ModuleList([EncoderBlock(self.device, n_conv, kernel_size, d_filters, drop_prob) for i in range(3)])
+        self.enc_blocks = nn.ModuleList([EncoderBlock(self.device, n_conv, kernel_size, d_filters, drop_prob) for i in range(n_blocks)])
     def forward(self, x, mask):
         ##print("Model Encoder Input = " + str(x.size()))
         x = self.conv(x.permute(0,2,1)).permute(0,2,1)
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M0 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask)
+            x = self.enc_blocks[i](x, mask)
         M0 = x
         #print("M0 shape = " + str(M0.size()))
         ##print(M0[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[1](x, mask)
+            x = self.enc_blocks[i](x, mask)
         M1 = x
         #print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[2](x, mask)
+            x = self.enc_blocks[i](x, mask)
         M2 = x
         #print(M2[0,0,:])
         ##print("Model Encoder Output M0 = " + str(M0.size()))

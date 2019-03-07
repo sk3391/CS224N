@@ -8,7 +8,6 @@ import layers_qanet
 import torch
 import torch.nn as nn
 
-
 class QANet(nn.Module):
     """QANet model for SQuAD.
 
@@ -72,5 +71,5 @@ class QANet(nn.Module):
         M0, M1, M2 = self.mod(att, c_mask)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(M0, M1, M2, c_mask)  # 2 tensors, each (batch_size, c_len)
-
+        
         return out
