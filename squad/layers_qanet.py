@@ -68,7 +68,7 @@ class CharEmbeddings(nn.Module):
         self.drop_prob = drop_prob_char
         self.embeddings = nn.Embedding.from_pretrained(char_vectors)
         self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
-        self.model_highway = Highway(self.embed_size)
+        #self.model_highway = Highway(self.embed_size)
 
     def forward(self, x):
         """
@@ -83,8 +83,9 @@ class CharEmbeddings(nn.Module):
         (batch_size, sentence_length, max_word_length, e_char) = x_emb.size()
         x_reshaped = (x_emb.view(batch_size*sentence_length, max_word_length, e_char)).permute(0,2,1)
         x_conv_out = self.model_cnn(x_reshaped)
-        x_highway = self.model_highway(x_conv_out)
-        x_word_emb = F.dropout(x_highway, self.drop_prob, self.training).view(batch_size, sentence_length, self.embed_size)
+        #x_highway = self.model_highway(x_conv_out)
+        x_word_emb = x_conv_out.view(batch_size, sentence_length, self.embed_size)
+        x_word_emb = F.dropout(x_word_emb, self.drop_prob, self.training)
         return x_word_emb
     
 class CNN(nn.Module):
@@ -226,9 +227,9 @@ class DepthSepCNN(nn.Module):
         ##print("x in CNN = " + str(x.size()))
         x_conv = self.depthwise(x)
         ##print("x after depthwise CNN = " + str(x_conv.size()))
-        x_conv_out = F.dropout(self.pointwise(x_conv), self.drop_prob, self.training)
+        x_conv_out = F.dropout(F.relu(self.pointwise(x_conv)), self.drop_prob, self.training)
         ##print("x after pointwise CNN = " + str(x_conv_out.size()))
-        return F.relu(x_conv_out)
+        return x_conv_out
 
 class SelfAttention(nn.Module):
     """Implementing Multi-head Attention.
@@ -413,6 +414,7 @@ class ModelEncoder(nn.Module):
         for i in range(self.n_blocks):
             x = self.enc_blocks[0](x, mask)
         M0 = x
+        #print("M0 shape = " + str(M0.size()))
         ##print(M0[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M Starting")
