@@ -20,7 +20,7 @@ from collections import OrderedDict
 from json import dumps
 #from models import BiDAF
 from models_qanet import QANet
-#from QANet_Git import QANet
+#from QANet_Git2 import Graph
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
@@ -55,6 +55,7 @@ def main(args):
 #                  drop_prob=args.drop_prob)
     #model = QANet(word_vectors, char_vectors,c_max_len = 400, q_max_len=50, d_model=128, train_cemb=False, pad=0, dropout=0.1, num_head=8)
     model = QANet(device, word_vectors, char_vectors, char_embed_size = 200, hidden_size = 128, drop_prob_word = 0.1, drop_prob_char = 0.05, drop_prob=0.1)
+    #model = Graph()
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info('Loading checkpoint from {}...'.format(args.load_path))
