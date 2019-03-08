@@ -36,12 +36,16 @@ class QANet(nn.Module):
                                     char_embed_size = char_embed_size, drop_prob_word = drop_prob_word, 
                                     drop_prob_char = drop_prob_char, drop_prob = drop_prob)
 
-        self.enc = layers_qanet.EmbeddingEncoder(device = device, d_filters=hidden_size, drop_prob=drop_prob, n_conv=4, 
+        self.enc = layers_qanet.EmbeddingEncoder(d_filters=hidden_size, drop_prob=drop_prob, n_conv=4, 
                                                  kernel_size=7, n_blocks=1, embed_size = word_vectors.size(1) + char_embed_size)
 
         self.att = layers_qanet.CQAttention(hidden_size=hidden_size, drop_prob=drop_prob)
 
+<<<<<<< HEAD
         self.mod = layers_qanet.ModelEncoder(device = device, n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 3)
+=======
+        self.mod = layers_qanet.ModelEncoder(n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 7)
+>>>>>>> master
 
         self.out = layers_qanet.QANetOutput(hidden_size=2*hidden_size, drop_prob=drop_prob)
 
