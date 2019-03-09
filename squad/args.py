@@ -111,11 +111,15 @@ def get_train_args():
                         help='Beta 1.')
     parser.add_argument('--beta2',
                         type=float,
-                        default=0.9999,#0.5,
+                        default=0.999,#0.5,
                         help='Beta 2.')
+    parser.add_argument('--eps',
+                        type=float,
+                        default=1e-7,#0.5,
+                        help='Epsilon.')
     parser.add_argument('--l2_wd',
                         type=float,
-                        default=3*10-7,
+                        default=3e-7,
                         help='L2 weight decay.')
     parser.add_argument('--num_epochs',
                         type=int,
@@ -144,7 +148,7 @@ def get_train_args():
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
-                        default=0.999,
+                        default=0.9999,
                         help='Decay rate for exponential moving average of parameters.')
 
     args = parser.parse_args()

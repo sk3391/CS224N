@@ -43,7 +43,6 @@ class Embedding(nn.Module):
         char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
         emb = torch.cat((char_emb, emb), 2)
         ##########
-        emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
 
@@ -79,13 +78,12 @@ class CharEmbeddings(nn.Module):
         @param output: Tensor of shape (batch_size, sentence_length, embed_size), containing the 
             CNN-based embeddings for each word of the sentences in the batch
         """
-        x_emb = self.embeddings(x)
+        x_emb = F.dropout(self.embeddings(x), self.drop_prob, self.training)
         (batch_size, sentence_length, max_word_length, e_char) = x_emb.size()
         x_reshaped = (x_emb.view(batch_size*sentence_length, max_word_length, e_char)).permute(0,2,1)
         x_conv_out = self.model_cnn(x_reshaped)
         #x_highway = self.model_highway(x_conv_out)
         x_word_emb = x_conv_out.view(batch_size, sentence_length, self.embed_size)
-        x_word_emb = F.dropout(x_word_emb, self.drop_prob, self.training)
         return x_word_emb
     
 class CNN(nn.Module):
@@ -156,7 +154,6 @@ class HighwayEncoder(nn.Module):
             g = torch.sigmoid(gate(x))
             t = F.relu(transform(x))
             x = g * t + (1 - g) * x
-            x = F.dropout(x, self.drop_prob, self.training)
 
         return x
 
@@ -227,7 +224,7 @@ class DepthSepCNN(nn.Module):
         ##print("x in CNN = " + str(x.size()))
         x_conv = self.depthwise(x)
         ##print("x after depthwise CNN = " + str(x_conv.size()))
-        x_conv_out = F.dropout(F.relu(self.pointwise(x_conv)), self.drop_prob, self.training)
+        x_conv_out = F.relu(self.pointwise(x_conv))
         ##print("x after pointwise CNN = " + str(x_conv_out.size()))
         return x_conv_out
 
@@ -288,7 +285,6 @@ class SelfAttention(nn.Module):
         ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
         out = torch.matmul(multihead, self.W_o)
         out = torch.add(out, self.bias)
-        out = F.dropout(out, self.drop_prob, self.training)
         ##print("Self Attention Final Output = " + str(out.size()))
         return out
     
@@ -298,12 +294,12 @@ class FeedForward(nn.Module):
         super(FeedForward, self).__init__()
         self.d_filters = d_filters
         self.drop_prob = drop_prob
-        self.ffn = nn.Linear(self.d_filters, self.d_filters, bias = True)
+        self.ffn1 = nn.Linear(self.d_filters, self.d_filters, bias = True)
+        self.ffn2 = nn.Linear(self.d_filters, self.d_filters, bias = True)
     def forward(self, x):
         ##print("FFN x = " + str(x.size()))
-        out = self.ffn(F.relu(self.ffn(x)))
+        out = self.ffn2(F.relu(self.ffn1(x)))
         ##print("FFN x with relu = " + str(out.size()))
-        out = F.dropout(out, self.drop_prob, self.training)
         ##print("FFN final = " + str(out.size()))
         return out
         
@@ -351,29 +347,47 @@ class EncoderBlock(nn.Module):
         self.conv = nn.ModuleList([DepthSepCNN(self.drop_prob, self.d_filters, self.d_filters, kernel_size) for i in range(self.n_conv)])
         self.self_attention = SelfAttention(self.device, self.drop_prob, self.d_filters)
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
-        self.residual = ResidualBlock(self.drop_prob)
-    def forward(self, x, mask):
+        #self.residual = ResidualBlock(self.drop_prob)
+    def forward(self, x, mask, l, blks):
+        total_layers = (self.n_conv + 1) * blks
+        dropout = self.drop_prob
         # Positional Encoding Block
         out = self.pos_enc(x)
         # Convolutional Block
         for i in range(self.n_conv):
             residual = out
             out = self.layernorm[i](out)
+            if (i) % 2 == 0:
+                out = F.dropout(out, p=dropout, training=self.training)
             out = self.conv[i](out.permute(0,2,1)).permute(0,2,1)
-            out = self.residual(out, residual)
+            out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
+            l += 1
         # Self Attention Block
         residual = out
         out = self.layernorm[-2](out)
+        out = F.dropout(out, p=dropout, training=self.training)
         out= self.self_attention(out, mask)
-        out = self.residual(out, residual)
+        out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
+        l += 1
         #print((out.permute(0,2,1))[0,0,:])
         #print((out.permute(0,2,1)).size())
         # Feed Forward Block
         residual = out
         out = self.layernorm[-1](out)
+        out = F.dropout(out, p=dropout, training=self.training)
         out = self.ffn(out)
-        out = self.residual(out, residual)
+        out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
         return out
+    
+    def layer_dropout(self, inputs, residual, dropout):
+        if self.training == True:
+            pred = torch.empty(1).uniform_(0,1) < dropout
+            if pred:
+                return residual
+            else:
+                return F.dropout(inputs, dropout, training=self.training) + residual
+        else:
+            return inputs + residual
     
 class EmbeddingEncoder(nn.Module):
     """Create Embedding Encoder Block"""
@@ -390,7 +404,7 @@ class EmbeddingEncoder(nn.Module):
         #x = self.conv(x.permute(0,2,1)).permute(0,2,1)
         ##print("Embedding Encoder after conv = " + str(x.size()))
         for i in range(self.n_blocks):
-            x = self.enc_blocks(x, mask)
+            x = self.enc_blocks(x, mask, 1, 1)
         out = x
         ##print(out[0,0,:])
         return out
@@ -412,20 +426,19 @@ class ModelEncoder(nn.Module):
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M0 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M0 = x
         #print("M0 shape = " + str(M0.size()))
         ##print(M0[0,0,:])
-        x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[1](x, mask)
+            x = self.enc_blocks[1](x, mask, i*(2+2)+1, 7)
         M1 = x
         #print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[2](x, mask)
+            x = self.enc_blocks[2](x, mask, i*(2+2)+1, 7)
         M2 = x
         #print(M2[0,0,:])
         ##print("Model Encoder Output M0 = " + str(M0.size()))
