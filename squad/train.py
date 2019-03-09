@@ -74,7 +74,7 @@ def main(args):
                                  log=log)
 
     # Get optimizer and scheduler
-    optimizer = optim.Adam(params = model.parameters(), lr = args.lr, betas = (args.beta1, args.beta2), eps = 1e-8, weight_decay = 3e-7)
+    optimizer = optim.Adam(params = model.parameters(), lr = args.lr, betas = (args.beta1, args.beta2), eps = args.eps, weight_decay = args.l2_wd)
     cr = 1.0 / math.log(args.lr_warm_up)
     scheduler = sched.LambdaLR(optimizer, lr_lambda=lambda ee: cr * math.log(ee+1) if ee < args.lr_warm_up else 1)
     #optimizer = optim.Adadelta(model.parameters(), args.lr,
