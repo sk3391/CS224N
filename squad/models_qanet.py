@@ -41,7 +41,7 @@ class QANet(nn.Module):
 
         self.att = layers_qanet.CQAttention(hidden_size=hidden_size, drop_prob=drop_prob)
 
-        self.mod = layers_qanet.ModelEncoder(n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 7)
+        self.mod = layers_qanet.ModelEncoder(n_conv = 2, kernel_size = 5, d_filters = hidden_size, drop_prob = drop_prob, n_blocks = 3)
 
         self.out = layers_qanet.QANetOutput(hidden_size=2*hidden_size, drop_prob=drop_prob)
 

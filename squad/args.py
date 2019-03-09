@@ -58,7 +58,7 @@ def get_setup_args():
                         help='Max number of words in a question at test time')
     parser.add_argument('--char_dim',
                         type=int,
-                        default=64,
+                        default=200,
                         help='Size of char vectors (char-level embeddings)')
     parser.add_argument('--glove_dim',
                         type=int,
@@ -99,7 +99,7 @@ def get_train_args():
                         help='Number of steps between successive evaluations.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.001,#0.5,
+                        default=0.005,#0.5,
                         help='Learning rate.')
     parser.add_argument('--lr_warm_up',
                         type=int,
@@ -111,19 +111,23 @@ def get_train_args():
                         help='Beta 1.')
     parser.add_argument('--beta2',
                         type=float,
-                        default=0.9999,#0.5,
+                        default=0.999,#0.5,
                         help='Beta 2.')
+    parser.add_argument('--eps',
+                        type=float,
+                        default=1e-7,
+                        help='Epsilon.')
     parser.add_argument('--l2_wd',
                         type=float,
-                        default=3*10-7,
+                        default=3e-7,
                         help='L2 weight decay.')
     parser.add_argument('--num_epochs',
                         type=int,
-                        default=30,
+                        default=10,
                         help='Number of epochs for which to train. Negative means forever.')
     parser.add_argument('--drop_prob',
                         type=float,
-                        default=0.2,
+                        default=0.1,
                         help='Probability of zeroing an activation in dropout layers.')
     parser.add_argument('--metric_name',
                         type=str,
@@ -144,7 +148,7 @@ def get_train_args():
                         help='Random seed for reproducibility.')
     parser.add_argument('--ema_decay',
                         type=float,
-                        default=0.999,
+                        default=0.9999,
                         help='Decay rate for exponential moving average of parameters.')
 
     args = parser.parse_args()

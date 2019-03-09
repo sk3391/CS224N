@@ -44,7 +44,6 @@ class Embedding(nn.Module):
         char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
         emb = torch.cat((w_emb, char_emb), 2)
         ##########
-        emb = F.dropout(emb, self.drop_prob, self.training)
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
 
@@ -66,7 +65,7 @@ class CharEmbeddings(nn.Module):
         self.e_char = char_vectors.size(1)
         self.embed_size = embed_size
         self.kernel_size = kernel_size
-        self.drop_prob = drop_prob_char
+        self.drop_prob_char = drop_prob_char
         self.embeddings = nn.Embedding.from_pretrained(char_vectors)
         self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
 
@@ -79,12 +78,11 @@ class CharEmbeddings(nn.Module):
         @param output: Tensor of shape (batch_size, sentence_length, embed_size), containing the 
             CNN-based embeddings for each word of the sentences in the batch
         """
-        x_emb = self.embeddings(x)
+        x_emb = F.dropout(self.embeddings(x), self.drop_prob_char, self.training)
         (batch_size, sentence_length, max_word_length, e_char) = x_emb.size()
         x_reshaped = (x_emb.view(batch_size*sentence_length, max_word_length, e_char)).permute(0,2,1)
         x_conv_out = self.model_cnn(x_reshaped)
         x_word_emb = x_conv_out.view(batch_size, sentence_length, self.embed_size)
-        x_word_emb = F.dropout(x_word_emb, self.drop_prob, self.training)
         return x_word_emb
     
 class CNN(nn.Module):
@@ -133,7 +131,6 @@ class HighwayEncoder(nn.Module):
             g = torch.sigmoid(gate(x))
             t = F.relu(transform(x))
             x = g * t + (1 - g) * x
-            x = F.dropout(x, self.drop_prob, self.training)
 
         return x
 
@@ -243,51 +240,52 @@ class SelfAttention(nn.Module):
         
     def forward(self, x, mask):
         batch_size, sentence_length, _ = x.size()
-        #att_heads = []#torch.empty(self.n_heads, batch_size, sentence_length, self.d_v)#, device = self.device)
+        att_heads = []#torch.empty(self.n_heads, batch_size, sentence_length, self.d_v)#, device = self.device)
         #multihead = torch.zeros(batch_size, sentence_length, 0)
         normalize = 1 / math.sqrt(self.d_k)
-        Q = torch.stack([torch.add(torch.matmul(x, self.W_q[i]), self.bias) for i in range(self.n_heads)])
-        K = torch.stack([torch.add(torch.matmul(x, self.W_k[i]), self.bias) for i in range(self.n_heads)])
-        V = torch.stack([torch.add(torch.matmul(x, self.W_v[i]), self.bias) for i in range(self.n_heads)])
-        (n_head, bs, l_x, d_k) = Q.size()
-        Q = Q.view(n_head*bs, l_x, d_k)
-        K = Q.view(n_head*bs, l_x, d_k)
-        V = Q.view(n_head*bs, l_x, d_k)
-        #print(" size of V = " + str(V.size()))
-        out = torch.bmm(Q, K.permute(0,2,1))
-        out = out * normalize
-        mask = mask.unsqueeze(1).expand(-1, l_x, -1).repeat(n_head, 1, 1)
-        #print("out size before softmax = " + str(out.size()))
-        out = masked_softmax(out, mask, dim=2)
-        #print("out size after softmax = " + str(out.size()))
-        out = torch.bmm(out, V)
-        #print("out size after V = " + str(out.size()))
-        out = out.view(n_head, bs, l_x, d_k).permute(1,2,0,3).contiguous().view(bs, l_x, self.d_filters)
-        out = torch.matmul(out, self.W_o)
-        out = torch.add(out, self.bias)
-#        for i in range(self.n_heads):
-#            Q = torch.add(torch.matmul(x, self.W_q[i]), self.bias)
-#            ##print("Self Attention Q = " + str(Q.size()))
-#            K = torch.add(torch.matmul(x, self.W_k[i]), self.bias)
-#            ##print("Self Attention K = " + str(K.size()))
-#            V = torch.add(torch.matmul(x, self.W_v[i]), self.bias)
-#            ##print("Self Attention V = " + str(V.size()))
-#            out = torch.bmm(Q, K.permute(0,2,1))
-#            ##print("Self Attention QK.T = " + str(out.size()))
-#            out = out * normalize
-#            ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
-#            ##print("Self Attention Mask = " + str(mask.size()))
-#            out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
-#            ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
-#            att_heads.append(torch.bmm(out, V))
-#            ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
-#            #multihead = torch.cat((att_heads, multihead), dim = 2)
-#        multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
-#        ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
-#        out = torch.matmul(multihead, self.W_o)
+#        Q = torch.stack([torch.add(torch.matmul(x, self.W_q[i]), self.bias) for i in range(self.n_heads)])
+#        K = torch.stack([torch.add(torch.matmul(x, self.W_k[i]), self.bias) for i in range(self.n_heads)])
+#        V = torch.stack([torch.add(torch.matmul(x, self.W_v[i]), self.bias) for i in range(self.n_heads)])
+#        (n_head, bs, l_x, d_k) = Q.size()
+#        Q = Q.view(n_head*bs, l_x, d_k)
+#        K = Q.view(n_head*bs, l_x, d_k)
+#        V = Q.view(n_head*bs, l_x, d_k)
+#        #print(" size of V = " + str(V.size()))
+#        out = torch.bmm(Q, K.permute(0,2,1))
+#        out = out * normalize
+#        mask = mask.unsqueeze(1).expand(-1, l_x, -1).repeat(n_head, 1, 1)
+#        #print("out size before softmax = " + str(out.size()))
+#        out = masked_softmax(out, mask, dim=2)
+#        #print("out size after softmax = " + str(out.size()))
+#        out = torch.bmm(out, V)
+#        #print("out size after V = " + str(out.size()))
+#        out = out.view(n_head, bs, l_x, d_k).permute(1,2,0,3).contiguous().view(bs, l_x, self.d_filters)
+#        out = torch.matmul(out, self.W_o)
 #        out = torch.add(out, self.bias)
+        for i in range(self.n_heads):
+            Q = torch.add(torch.matmul(x, self.W_q[i]), self.bias)
+            ##print("Self Attention Q = " + str(Q.size()))
+            K = torch.add(torch.matmul(x, self.W_k[i]), self.bias)
+            ##print("Self Attention K = " + str(K.size()))
+            V = torch.add(torch.matmul(x, self.W_v[i]), self.bias)
+            ##print("Self Attention V = " + str(V.size()))
+            out = torch.bmm(Q, K.permute(0,2,1))
+            ##print("Self Attention QK.T = " + str(out.size()))
+            out = out * normalize
+            ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
+            ##print("Self Attention Mask = " + str(mask.size()))
+            out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
+            ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
+            out = F.dropout(out, self.drop_prob, self.training)
+            att_heads.append(torch.bmm(out, V))
+            ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
+            #multihead = torch.cat((att_heads, multihead), dim = 2)
+        multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
+        ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
+        out = torch.matmul(multihead, self.W_o)
+        out = torch.add(out, self.bias)
         #out = F.dropout(out, self.drop_prob, self.training)
-        ##print("Self Attention Final Output = " + str(out.size()))
+        #print("Self Attention Final Output = " + str(out.size()))
         return out
     
 class FeedForward(nn.Module):
@@ -296,12 +294,12 @@ class FeedForward(nn.Module):
         super(FeedForward, self).__init__()
         self.d_filters = d_filters
         self.drop_prob = drop_prob
-        self.ffn = nn.Linear(self.d_filters, self.d_filters, bias = True)
+        self.ffn1 = nn.Linear(self.d_filters, self.d_filters, bias = True)
+        self.ffn2 = nn.Linear(self.d_filters, self.d_filters, bias = True)
     def forward(self, x):
         ##print("FFN x = " + str(x.size()))
-        out = self.ffn(F.relu(self.ffn(x)))
+        out = self.ffn2(F.relu(self.ffn1(x)))
         ##print("FFN x with relu = " + str(out.size()))
-        out = F.dropout(out, self.drop_prob, self.training)
         ##print("FFN final = " + str(out.size()))
         return out
         
@@ -369,6 +367,7 @@ class EncoderBlock(nn.Module):
         # Self Attention Block
         residual = out
         out = self.layernorm2(out)
+        out = F.dropout(out, p=dropout, training=self.training)
         out= self.self_attention(out, mask)
         out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
         l += 1
@@ -378,6 +377,7 @@ class EncoderBlock(nn.Module):
         # Feed Forward Block
         residual = out
         out = self.layernorm3(out)
+        out = F.dropout(out, p=dropout, training=self.training)
         out = self.ffn(out)
         out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
         #out = self.residual(out, residual)
@@ -430,7 +430,6 @@ class ModelEncoder(nn.Module):
         M0 = x
         #print("M0 shape = " + str(M0.size()))
         ##print(M0[0,0,:])
-        x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
             x = self.enc_blocks[i](x, mask, i*(2+2)+1, 7)
