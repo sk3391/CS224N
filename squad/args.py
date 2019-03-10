@@ -99,7 +99,7 @@ def get_train_args():
                         help='Number of steps between successive evaluations.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.001,#0.5,
+                        default=0.0005,#0.5,
                         help='Learning rate.')
     parser.add_argument('--lr_warm_up',
                         type=int,
@@ -240,7 +240,7 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=16,#64,
+                        default=32,#64,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',
