@@ -41,7 +41,7 @@ class Embedding(nn.Module):
         emb = F.dropout(self.embed(x_w), self.drop_prob_word, self.training)   # (batch_size, seq_len, embed_size)
         #### Added for char embedding
         char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
-        emb = torch.cat((char_emb, emb), 2)
+        emb = torch.cat((emb, char_emb), 2)
         ##########
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
@@ -54,7 +54,7 @@ class CharEmbeddings(nn.Module):
     """
     Class that converts input words to their CNN-based embeddings.
     """
-    def __init__(self, embed_size, char_vectors, drop_prob_char, kernel_size = 7):
+    def __init__(self, embed_size, char_vectors, drop_prob_char, kernel_size = 5):
         """
         Init the Embedding layer for one language
         @param embed_size (int): Embedding size (dimensionality) for the output 
@@ -65,7 +65,7 @@ class CharEmbeddings(nn.Module):
         self.embed_size = embed_size
         self.kernel_size = kernel_size
         self.drop_prob = drop_prob_char
-        self.embeddings = nn.Embedding.from_pretrained(char_vectors)
+        self.embeddings = nn.Embedding.from_pretrained(char_vectors, freeze = False)
         self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
         #self.model_highway = Highway(self.embed_size)
 
@@ -154,6 +154,7 @@ class HighwayEncoder(nn.Module):
             g = torch.sigmoid(gate(x))
             t = F.relu(transform(x))
             x = g * t + (1 - g) * x
+            x = F.dropout(x, self.drop_prob, self.training)
 
         return x
 
@@ -173,7 +174,7 @@ class PositionalEncoding(nn.Module):
         length = x.size()[1]
         channels = x.size()[2]
         signal = self.get_timing_signal(length, channels, min_timescale, max_timescale)
-        x = (x + signal.to(x))#.transpose(1, 2)
+        x = x + signal#.transpose(1, 2)
         #print("Final Embedding = " + str(x.size()))
 #        print("positional encoding input = " + str(x.size()))
 #        batch_size = x.size(0)
@@ -186,7 +187,7 @@ class PositionalEncoding(nn.Module):
 #        pos_enc[:, :, 1::2] = torch.cos(position * self.frequencies)
 #        ###print("positional encoding = " + str(pos_enc.size()))
 #        pos_enc = Variable(pos_enc, requires_grad=False).permute(0,2,1)
-#        x = F.dropout(x + pos_enc, self.drop_prob, self.training)
+        x = F.dropout(x, self.drop_prob, self.training)
         #print(x[0,0,:])
         ###print("Final Embedding = " + str(x.size()))
         return x
@@ -263,7 +264,7 @@ class SelfAttention(nn.Module):
         batch_size, sentence_length, _ = x.size()
         att_heads = []#torch.empty(self.n_heads, batch_size, sentence_length, self.d_v)#, device = self.device)
         #multihead = torch.zeros(batch_size, sentence_length, 0)
-        normalize = 1 / math.sqrt(self.d_k)
+        normalize = 1.0 / math.sqrt(self.d_k)
         for i in range(self.n_heads):
             Q = torch.add(torch.matmul(x, self.W_q[i]), self.bias)
             ##print("Self Attention Q = " + str(Q.size()))
@@ -271,14 +272,14 @@ class SelfAttention(nn.Module):
             ##print("Self Attention K = " + str(K.size()))
             V = torch.add(torch.matmul(x, self.W_v[i]), self.bias)
             ##print("Self Attention V = " + str(V.size()))
-            out = torch.bmm(Q, K.permute(0,2,1))
+            out = torch.matmul(Q, K.permute(0,2,1))
             ##print("Self Attention QK.T = " + str(out.size()))
             out = torch.mul(out, normalize)
             ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
             ##print("Self Attention Mask = " + str(mask.size()))
             out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
             ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
-            att_heads.append(torch.bmm(out, V))
+            att_heads.append(torch.matmul(out, V))
             ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
@@ -349,7 +350,7 @@ class EncoderBlock(nn.Module):
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
         #self.residual = ResidualBlock(self.drop_prob)
     def forward(self, x, mask, l, blks):
-        total_layers = (self.n_conv + 1) * blks
+        total_layers = (self.n_conv + 2) * blks
         dropout = self.drop_prob
         # Positional Encoding Block
         out = self.pos_enc(x)
