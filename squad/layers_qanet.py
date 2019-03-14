@@ -236,7 +236,7 @@ class SelfAttention(nn.Module):
     by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, 
     Llion Jones, Aidan N. Gomez, Lukasz Kaiser, Illia Polosukhin
     (https://arxiv.org/pdf/1706.03762.pdf)"""
-    def __init__(self, device, drop_prob, d_filters = 128, n_heads = 8):
+    def __init__(self, device, drop_prob, d_filters = 128, n_heads = 4):
         super(SelfAttention, self).__init__()
         self.n_heads = n_heads
         self.device = device
@@ -272,14 +272,14 @@ class SelfAttention(nn.Module):
             ##print("Self Attention K = " + str(K.size()))
             V = torch.add(torch.matmul(x, self.W_v[i]), self.bias)
             ##print("Self Attention V = " + str(V.size()))
-            out = torch.matmul(Q, K.permute(0,2,1))
+            out = torch.bmm(Q, K.permute(0,2,1))
             ##print("Self Attention QK.T = " + str(out.size()))
             out = torch.mul(out, normalize)
             ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
             ##print("Self Attention Mask = " + str(mask.size()))
             out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
             ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
-            att_heads.append(torch.matmul(out, V))
+            att_heads.append(torch.bmm(out, V))
             ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
@@ -433,13 +433,13 @@ class ModelEncoder(nn.Module):
         ##print(M0[0,0,:])
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[1](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M1 = x
         #print(M1[0,0,:])
-        x = F.dropout(x, self.drop_prob, self.training)
+        #x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[2](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M2 = x
         #print(M2[0,0,:])
         ##print("Model Encoder Output M0 = " + str(M0.size()))
