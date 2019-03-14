@@ -174,7 +174,7 @@ class PositionalEncoding(nn.Module):
         length = x.size()[1]
         channels = x.size()[2]
         signal = self.get_timing_signal(length, channels, min_timescale, max_timescale)
-        x = x + signal#.transpose(1, 2)
+        x = x + signal.to(x)#.transpose(1, 2)
         #print("Final Embedding = " + str(x.size()))
 #        print("positional encoding input = " + str(x.size()))
 #        batch_size = x.size(0)
