@@ -41,7 +41,7 @@ class Embedding(nn.Module):
         emb = F.dropout(self.embed(x_w), self.drop_prob_word, self.training)   # (batch_size, seq_len, embed_size)
         #### Added for char embedding
         char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
-        emb = torch.cat((char_emb, emb), 2)
+        emb = torch.cat((emb, char_emb), 2)
         ##########
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
@@ -65,7 +65,7 @@ class CharEmbeddings(nn.Module):
         self.embed_size = embed_size
         self.kernel_size = kernel_size
         self.drop_prob = drop_prob_char
-        self.embeddings = nn.Embedding.from_pretrained(char_vectors)
+        self.embeddings = nn.Embedding.from_pretrained(char_vectors, freeze = False)
         self.model_cnn = CNN(self.e_char, self.embed_size, self.kernel_size)
         #self.model_highway = Highway(self.embed_size)
 
@@ -235,7 +235,7 @@ class SelfAttention(nn.Module):
     by Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, 
     Llion Jones, Aidan N. Gomez, Lukasz Kaiser, Illia Polosukhin
     (https://arxiv.org/pdf/1706.03762.pdf)"""
-    def __init__(self, device, drop_prob, d_filters = 128, n_heads = 8):
+    def __init__(self, device, drop_prob, d_filters = 128, n_heads = 4):
         super(SelfAttention, self).__init__()
         self.n_heads = n_heads
         self.device = device
@@ -432,13 +432,13 @@ class ModelEncoder(nn.Module):
         ##print(M0[0,0,:])
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[1](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M1 = x
         #print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[2](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M2 = x
         #print(M2[0,0,:])
         ##print("Model Encoder Output M0 = " + str(M0.size()))
