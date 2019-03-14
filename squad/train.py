@@ -25,7 +25,6 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
-import gc
 
 
 def main(args):
@@ -106,8 +105,6 @@ def main(args):
         with torch.enable_grad(), \
                 tqdm(total=len(train_loader.dataset)) as progress_bar:
             for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in train_loader:
-                torch.cuda.empty_cache()
-                gc.collect()
                 # Setup for forward
                 cw_idxs = cw_idxs.to(device)
                 cc_idxs = cc_idxs.to(device)
