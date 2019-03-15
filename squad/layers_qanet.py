@@ -259,24 +259,32 @@ class SelfAttention(nn.Module):
         nn.init.xavier_uniform_(self.W_o)
         self.bias = nn.Parameter(torch.zeros(1))
         
-    def forward(self, x, mask):
+    def forward(self, x, mask, convmask):
         batch_size, sentence_length, _ = x.size()
         att_heads = []#torch.empty(self.n_heads, batch_size, sentence_length, self.d_v)#, device = self.device)
         #multihead = torch.zeros(batch_size, sentence_length, 0)
         normalize = 1 / math.sqrt(self.d_k)
-        for i in range(self.n_heads):
-            Q = torch.add(torch.matmul(x, self.W_q[i]), self.bias)
-            ##print("Self Attention Q = " + str(Q.size()))
-            K = torch.add(torch.matmul(x, self.W_k[i]), self.bias)
-            ##print("Self Attention K = " + str(K.size()))
-            V = torch.add(torch.matmul(x, self.W_v[i]), self.bias)
-            ##print("Self Attention V = " + str(V.size()))
-            out = torch.bmm(Q, K.permute(0,2,1))
-            ##print("Self Attention QK.T = " + str(out.size()))
-            out = torch.mul(out, normalize)
-            ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
-            ##print("Self Attention Mask = " + str(mask.size()))
-            out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
+        N=3
+        n = (N-1)//2
+        for h in range(self.n_heads):
+            out = []
+            for k in range(max(0,h-n), min(h+n,h)):
+                Q = torch.add(torch.matmul(x, self.W_q[h]), self.bias)
+                ##print("Self Attention Q = " + str(Q.size()))
+                K = torch.add(torch.matmul(x, self.W_k[k]), self.bias)
+                ##print("Self Attention K = " + str(K.size()))
+                ##print("Self Attention V = " + str(V.size()))
+                energy = torch.bmm(Q, K.permute(0,2,1))
+                ##print("Self Attention QK.T = " + str(out.size()))
+                energy = torch.mul(energy, normalize)
+                out.append(energy)
+            for k in range(max(0,h-n), min(h+n,h)):
+                V = torch.add(torch.matmul(x, self.W_v[k]), self.bias)
+                ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
+                #convolution self attention
+                out = out * convmask
+                ##print("Self Attention Mask = " + str(mask.size()))
+                out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
             ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
             att_heads.append(torch.bmm(out, V))
             ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
@@ -348,7 +356,7 @@ class EncoderBlock(nn.Module):
         self.self_attention = SelfAttention(self.device, self.drop_prob, self.d_filters)
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
         #self.residual = ResidualBlock(self.drop_prob)
-    def forward(self, x, mask, l, blks):
+    def forward(self, x, mask, l, blks, convmask):
         total_layers = (self.n_conv + 1) * blks
         dropout = self.drop_prob
         # Positional Encoding Block
@@ -366,7 +374,7 @@ class EncoderBlock(nn.Module):
         residual = out
         out = self.layernorm[-2](out)
         out = F.dropout(out, p=dropout, training=self.training)
-        out= self.self_attention(out, mask)
+        out= self.self_attention(out, mask, convmask)
         out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
         l += 1
         #print((out.permute(0,2,1))[0,0,:])
@@ -403,11 +411,28 @@ class EmbeddingEncoder(nn.Module):
         ##print("Embedding Encoder Input = " + str(x.size()))
         #x = self.conv(x.permute(0,2,1)).permute(0,2,1)
         ##print("Embedding Encoder after conv = " + str(x.size()))
+        convmask = getconvmask(x.size(1))
+        print(convmask.size())
         for i in range(self.n_blocks):
-            x = self.enc_blocks(x, mask, 1, 1)
+            x = self.enc_blocks(x, mask, 1, 1, convmask)
         out = x
         ##print(out[0,0,:])
         return out
+    
+    def getconvmask(self, size):
+        M=11
+        m = (M-1)//2
+        mask = torch.zeros(size+2*m)
+        ones = torch.ones(2*m + 1)
+        mask[:2*m+1] = ones
+        convmask = torch.stack([roll(mask,i) for i in range(size+2*m)])
+        convmask = convmask[:,m:]
+        convmask = convmask[:-m]
+        return convmask
+    
+    def roll(self, x, n):  
+        return torch.cat((x[-n:], x[:-n]))
+        
 
 class ModelEncoder(nn.Module):
     """Create Model Encoder Block"""
