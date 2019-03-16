@@ -292,7 +292,7 @@ class SelfAttention(nn.Module):
             #print("Stacked Energy = " + str(energy.size()))
             V = torch.stack(V).permute(1,0,2,3)
             #print("Stacked V = " + str(V.size()))
-            energy *= convmask
+            energy = torch.mm(energy,convmask)
             #print("Convolved Energy = " + str(energy.size()))
             (bs, nh, sl, dk) = energy.size()
             energy = energy.contiguous().view(bs, nh*sl, dk).permute(0,2,1)
