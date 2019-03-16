@@ -63,14 +63,30 @@ class QANet(nn.Module):
         #print("query embedding size = " + str(c_emb.size()))
         #context embedding size = torch.Size([64, 321, 500])
         #query embedding size = torch.Size([64, 321, 500])
-        
-        c_enc = self.enc(c_emb, c_mask)    # (batch_size, c_len, 2 * hidden_size)
-        q_enc = self.enc(q_emb, q_mask)    # (batch_size, q_len, 2 * hidden_size)
+        c_convmask = self.getconvmask(c_emb.size(1))
+        q_convmask = self.getconvmask(q_emb.size(1))
+        c_enc = self.enc(c_emb, c_mask, c_convmask)    # (batch_size, c_len, 2 * hidden_size)
+        q_enc = self.enc(q_emb, q_mask, q_convmask)    # (batch_size, q_len, 2 * hidden_size)
 
         att = self.att(c_enc, q_enc, c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        M0, M1, M2 = self.mod(att, c_mask)        # (batch_size, c_len, 2 * hidden_size)
+        att_convmask = self.getconvmask(att.size(1))
+        M0, M1, M2 = self.mod(att, c_mask, att_convmask)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(M0, M1, M2, c_mask)  # 2 tensors, each (batch_size, c_len)
 
         return out
+    
+    def getconvmask(self, size):
+        M=11
+        m = (M-1)//2
+        mask = torch.zeros(size+m)
+        ones = torch.ones(2*m + 1)
+        mask[:2*m+1] = ones
+        convmask = torch.stack([self.roll(mask,i) for i in range(size+m)])
+        convmask = convmask[:,m:]
+        convmask = convmask[:-m]
+        return convmask
+    
+    def roll(self, x, n):  
+        return torch.cat((x[-n:], x[:-n]))

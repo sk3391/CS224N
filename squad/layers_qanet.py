@@ -168,27 +168,27 @@ class PositionalEncoding(nn.Module):
         self.drop_prob = drop_prob
         self.frequencies = torch.exp(torch.arange(0, self.d_filters, 2).type(torch.float32) * -(math.log(10000.0) / self.d_filters)).unsqueeze(0)
     def forward(self, x, min_timescale=1.0, max_timescale=1.0e4):
-        #print("positional encoding input = " + str(x.size()))
+        ##print("positional encoding input = " + str(x.size()))
         x = x#.transpose(1, 2)
         length = x.size()[1]
         channels = x.size()[2]
         signal = self.get_timing_signal(length, channels, min_timescale, max_timescale)
         x = (x + signal.to(x))#.transpose(1, 2)
-        #print("Final Embedding = " + str(x.size()))
-#        print("positional encoding input = " + str(x.size()))
+        ##print("Final Embedding = " + str(x.size()))
+#        #print("positional encoding input = " + str(x.size()))
 #        batch_size = x.size(0)
 #        length = x.size(1)
 #        position = torch.arange(0, length).type(torch.float32).unsqueeze(1)
-#        print("position = " + str(position.size()))
-#        print("frequencies = " + str(self.frequencies.size()))
+#        #print("position = " + str(position.size()))
+#        #print("frequencies = " + str(self.frequencies.size()))
 #        pos_enc = torch.zeros(batch_size, self.d_filters, length)
 #        pos_enc[:, :, 0::2] = torch.sin(position * self.frequencies)
 #        pos_enc[:, :, 1::2] = torch.cos(position * self.frequencies)
-#        ###print("positional encoding = " + str(pos_enc.size()))
+#        ####print("positional encoding = " + str(pos_enc.size()))
 #        pos_enc = Variable(pos_enc, requires_grad=False).permute(0,2,1)
 #        x = F.dropout(x + pos_enc, self.drop_prob, self.training)
-        #print(x[0,0,:])
-        ###print("Final Embedding = " + str(x.size()))
+        ##print(x[0,0,:])
+        ####print("Final Embedding = " + str(x.size()))
         return x
     
     def get_timing_signal(self, length, channels, min_timescale=1.0, max_timescale=1.0e4):
@@ -221,11 +221,11 @@ class DepthSepCNN(nn.Module):
         self.pointwise = nn.Conv1d(in_channels, d_filters, kernel_size = 1)
         
     def forward(self, x):
-        ##print("x in CNN = " + str(x.size()))
+        ###print("x in CNN = " + str(x.size()))
         x_conv = self.depthwise(x)
-        ##print("x after depthwise CNN = " + str(x_conv.size()))
+        ###print("x after depthwise CNN = " + str(x_conv.size()))
         x_conv_out = F.relu(self.pointwise(x_conv))
-        ##print("x after pointwise CNN = " + str(x_conv_out.size()))
+        ###print("x after pointwise CNN = " + str(x_conv_out.size()))
         return x_conv_out
 
 class SelfAttention(nn.Module):
@@ -266,34 +266,55 @@ class SelfAttention(nn.Module):
         normalize = 1 / math.sqrt(self.d_k)
         N=3
         n = (N-1)//2
+        #print("Conv Mask convmask = " + str(convmask.size()))
+        #print("n = " + str(n))
         for h in range(self.n_heads):
             out = []
-            for k in range(max(0,h-n), min(h+n,h)):
-                Q = torch.add(torch.matmul(x, self.W_q[h]), self.bias)
-                ##print("Self Attention Q = " + str(Q.size()))
+            V = []
+            newmask = []
+            Q = torch.add(torch.matmul(x, self.W_q[h]), self.bias)
+            #print("Self Attention Q_h = " + str(Q.size()))
+            for k in range(max(0,h-n), min(h+n+1,self.n_heads)):
+                ###print("Self Attention Q = " + str(Q.size()))
                 K = torch.add(torch.matmul(x, self.W_k[k]), self.bias)
-                ##print("Self Attention K = " + str(K.size()))
-                ##print("Self Attention V = " + str(V.size()))
+                Vi = torch.add(torch.matmul(x, self.W_v[k]), self.bias)
+                #print("Self Attention K = " + str(K.size()))
+                #print("Self Attention Vi = " + str(Vi.size()))
                 energy = torch.bmm(Q, K.permute(0,2,1))
-                ##print("Self Attention QK.T = " + str(out.size()))
+                #print("Energy k = " + str(energy.size()))
+                ###print("Self Attention QK.T = " + str(out.size()))
                 energy = torch.mul(energy, normalize)
+                #print("Energy Normalize k = " + str(energy.size()))
                 out.append(energy)
-            for k in range(max(0,h-n), min(h+n,h)):
-                V = torch.add(torch.matmul(x, self.W_v[k]), self.bias)
-                ##print("Self Attention QK.T/sqrt(d_k) = " + str(out.size()))
-                #convolution self attention
-                out = out * convmask
-                ##print("Self Attention Mask = " + str(mask.size()))
-                out = masked_softmax(out, mask.view(batch_size, 1, out.size(1)), dim=2)
-            ##print("Self Attention softmax(QK.T/sqrt(d_k)) = " + str(out.size()))
-            att_heads.append(torch.bmm(out, V))
-            ##print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
+                V.append(Vi)
+                newmask.append(mask)
+            energy = torch.stack(out).permute(1,0,2,3)
+            #print("Stacked Energy = " + str(energy.size()))
+            V = torch.stack(V).permute(1,0,2,3)
+            #print("Stacked V = " + str(V.size()))
+            energy *= convmask
+            #print("Convolved Energy = " + str(energy.size()))
+            (bs, nh, sl, dk) = energy.size()
+            energy = energy.contiguous().view(bs, nh*sl, dk).permute(0,2,1)
+            #print("Convolved Energy Ready for Softmax = " + str(energy.size()))
+            newmask = torch.stack(newmask).permute(1,0,2)
+            #print("New Mask Ready for Softmax = " + str(newmask.size()))
+            newmask = newmask.contiguous().view(bs, nh*sl)
+            alpha = masked_softmax(energy, newmask.view(batch_size, 1, energy.size(2)), dim=2)
+            #print("Alpha after softmax = " + str(alpha.size()))
+            alpha = alpha.view(bs, sl, nh, dk).permute(0, 2, 1, 3)
+            #print("Apha Unconvolved = " + str(alpha.size()))
+            y = torch.bmm(alpha.contiguous().view(bs*nh, sl,dk), V.contiguous().view(bs*nh, V.size(2), V.size(3)))
+            y = y.contiguous().view(bs, nh, sl, V.size(3)).sum(dim = 1)
+            #print("Summing up to get y = " + str(y))
+            att_heads.append(y)
+            ###print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
-        ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
+        ###print("Self Attention Concat MultiHeads = " + str(multihead.size()))
         out = torch.matmul(multihead, self.W_o)
         out = torch.add(out, self.bias)
-        ##print("Self Attention Final Output = " + str(out.size()))
+        ###print("Self Attention Final Output = " + str(out.size()))
         return out
     
 class FeedForward(nn.Module):
@@ -305,10 +326,10 @@ class FeedForward(nn.Module):
         self.ffn1 = nn.Linear(self.d_filters, self.d_filters, bias = True)
         self.ffn2 = nn.Linear(self.d_filters, self.d_filters, bias = True)
     def forward(self, x):
-        ##print("FFN x = " + str(x.size()))
+        ###print("FFN x = " + str(x.size()))
         out = self.ffn2(F.relu(self.ffn1(x)))
-        ##print("FFN x with relu = " + str(out.size()))
-        ##print("FFN final = " + str(out.size()))
+        ###print("FFN x with relu = " + str(out.size()))
+        ###print("FFN final = " + str(out.size()))
         return out
         
 class LayerNorm(nn.Module):
@@ -324,9 +345,9 @@ class LayerNorm(nn.Module):
         self.d_filters = d_filters
         self.layer_norm = nn.LayerNorm(self.d_filters)
     def forward(self, x):
-        ##print("LayerNorm x = " + str(x.size()))
+        ###print("LayerNorm x = " + str(x.size()))
         return self.layer_norm(x)
-        ##print("LayerNorm output = " + str(x.size()))
+        ###print("LayerNorm output = " + str(x.size()))
         
 class ResidualBlock(nn.Module):
     """Initializing Residual Block f(layernorm(x)) + x
@@ -335,10 +356,10 @@ class ResidualBlock(nn.Module):
         super(ResidualBlock, self).__init__()
         self.drop_prob = drop_prob
     def forward(self, x, residual):
-        ##print("Residual Block x = " + str(x.size()))
-        ##print("Residual Block residual = " + str(residual.size()))
+        ###print("Residual Block x = " + str(x.size()))
+        ###print("Residual Block residual = " + str(residual.size()))
         x = x + residual
-        ##print("Residual Block final Output = " + str(x.size()))
+        ###print("Residual Block final Output = " + str(x.size()))
         return x
     
 
@@ -377,8 +398,8 @@ class EncoderBlock(nn.Module):
         out= self.self_attention(out, mask, convmask)
         out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
         l += 1
-        #print((out.permute(0,2,1))[0,0,:])
-        #print((out.permute(0,2,1)).size())
+        ##print((out.permute(0,2,1))[0,0,:])
+        ##print((out.permute(0,2,1)).size())
         # Feed Forward Block
         residual = out
         out = self.layernorm[-1](out)
@@ -407,31 +428,15 @@ class EmbeddingEncoder(nn.Module):
         #self.conv = DepthSepCNN(drop_prob, embed_size, d_filters, kernel_size)
         self.enc_blocks = EncoderBlock(self.device, n_conv, kernel_size, d_filters, drop_prob)
         #self.enc_blocks = nn.ModuleList([EncoderBlock(n_conv, kernel_size, d_filters, drop_prob) for i in range(n_blocks)])
-    def forward(self, x, mask):
-        ##print("Embedding Encoder Input = " + str(x.size()))
+    def forward(self, x, mask, convmask):
+        ###print("Embedding Encoder Input = " + str(x.size()))
         #x = self.conv(x.permute(0,2,1)).permute(0,2,1)
-        ##print("Embedding Encoder after conv = " + str(x.size()))
-        convmask = getconvmask(x.size(1))
-        print(convmask.size())
+        ###print("Embedding Encoder after conv = " + str(x.size()))
         for i in range(self.n_blocks):
             x = self.enc_blocks(x, mask, 1, 1, convmask)
         out = x
-        ##print(out[0,0,:])
+        ###print(out[0,0,:])
         return out
-    
-    def getconvmask(self, size):
-        M=11
-        m = (M-1)//2
-        mask = torch.zeros(size+2*m)
-        ones = torch.ones(2*m + 1)
-        mask[:2*m+1] = ones
-        convmask = torch.stack([roll(mask,i) for i in range(size+2*m)])
-        convmask = convmask[:,m:]
-        convmask = convmask[:-m]
-        return convmask
-    
-    def roll(self, x, n):  
-        return torch.cat((x[-n:], x[:-n]))
         
 
 class ModelEncoder(nn.Module):
@@ -445,30 +450,30 @@ class ModelEncoder(nn.Module):
         self.conv = DepthSepCNN(drop_prob, d_filters*4, d_filters, kernel_size)
         #self.enc_blocks = EncoderBlock(n_conv, kernel_size, d_filters, drop_prob)
         self.enc_blocks = nn.ModuleList([EncoderBlock(self.device, n_conv, kernel_size, d_filters, drop_prob) for i in range(3)])
-    def forward(self, x, mask):
-        ##print("Model Encoder Input = " + str(x.size()))
+    def forward(self, x, mask, convmask):
+        ###print("Model Encoder Input = " + str(x.size()))
         x = self.conv(x.permute(0,2,1)).permute(0,2,1)
         x = F.dropout(x, self.drop_prob, self.training)
-        ##print("Model Encoder Output M0 Starting")
+        ###print("Model Encoder Output M0 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
         M0 = x
-        #print("M0 shape = " + str(M0.size()))
-        ##print(M0[0,0,:])
-        ##print("Model Encoder Output M Starting")
+        ##print("M0 shape = " + str(M0.size()))
+        ###print(M0[0,0,:])
+        ###print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
         M1 = x
-        #print(M1[0,0,:])
+        ##print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
-        ##print("Model Encoder Output M2 Starting")
+        ###print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
         M2 = x
-        #print(M2[0,0,:])
-        ##print("Model Encoder Output M0 = " + str(M0.size()))
-        ##print("Model Encoder Output M1 = " + str(M1.size()))
-        ##print("Model Encoder Output M2 = " + str(M2.size()))
+        ##print(M2[0,0,:])
+        ###print("Model Encoder Output M0 = " + str(M0.size()))
+        ###print("Model Encoder Output M1 = " + str(M1.size()))
+        ###print("Model Encoder Output M2 = " + str(M2.size()))
         return M0, M1, M2
         
         
@@ -499,12 +504,12 @@ class CQAttention(nn.Module):
         self.bias = nn.Parameter(torch.zeros(1))
 
     def forward(self, c, q, c_mask, q_mask):
-        ##print("CQ Attention Context Input = " + str(c.size()))
-        ##print("CQ Attention Query Input = " + str(c.size()))
+        ###print("CQ Attention Context Input = " + str(c.size()))
+        ###print("CQ Attention Query Input = " + str(c.size()))
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
         s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
-        ##print("CQ Attention Similarity Matrix = " + str(s.size()))
+        ###print("CQ Attention Similarity Matrix = " + str(s.size()))
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
         s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
@@ -517,8 +522,8 @@ class CQAttention(nn.Module):
 
         x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
         x = F.dropout(x, self.drop_prob, self.training)
-        ##print("CQ Attention Output = " + str(x.size()))
-        ##print(x[0,0,:])
+        ###print("CQ Attention Output = " + str(x.size()))
+        ###print(x[0,0,:])
         return x
 
     def get_similarity_matrix(self, c, q):
@@ -564,12 +569,12 @@ class QANetOutput(nn.Module):
         # Shapes: (batch_size, seq_len, 1)
         logits_1 = self.W1(torch.cat([M0, M1], dim=-1))
         logits_2 = self.W2(torch.cat([M0, M2], dim=-1))
-        ##print("QANet Output logits_1 = " + str(logits_1.size()))
-        ##print("QANet Output logits_2 = " + str(logits_2.size()))
+        ###print("QANet Output logits_1 = " + str(logits_1.size()))
+        ###print("QANet Output logits_2 = " + str(logits_2.size()))
         # Shapes: (batch_size, seq_len)
         log_p1 = masked_softmax(logits_1.squeeze(), mask, log_softmax=True)
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
-        ##print("QANet Output log_p1 = " + str(log_p1.size()))
-        ##print("QANet Output log_p2 = " + str(log_p2.size()))
+        ###print("QANet Output log_p1 = " + str(log_p1.size()))
+        ###print("QANet Output log_p2 = " + str(log_p2.size()))
 
         return log_p1, log_p2
