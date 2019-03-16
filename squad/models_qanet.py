@@ -71,8 +71,8 @@ class QANet(nn.Module):
 
         att = self.att(c_enc, q_enc, c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
 
-        att_convmask = self.getconvmask(att.size(1))
-        M0, M1, M2 = self.mod(att, c_mask, att_convmask)        # (batch_size, c_len, 2 * hidden_size)
+        #att_convmask = self.getconvmask(att.size(1))
+        M0, M1, M2 = self.mod(att, c_mask, c_convmask)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(M0, M1, M2, c_mask)  # 2 tensors, each (batch_size, c_len)
 
