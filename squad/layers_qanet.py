@@ -41,10 +41,10 @@ class Embedding(nn.Module):
         emb = F.dropout(self.embed(x_w), self.drop_prob_word, self.training)   # (batch_size, seq_len, embed_size)
         #### Added for char embedding
         char_emb = self.char_embed(x_c) # (batch_size, seq_len, char_embed_size)
-        emb = Variable(torch.cat((emb, char_emb), 2))
+        emb = torch.cat((emb, char_emb), 2)
         ##########
-        emb = Variable(self.proj(emb))  # (batch_size, seq_len, hidden_size)
-        emb = Variable(self.hwy(emb))   # (batch_size, seq_len, hidden_size)
+        emb =self.proj(emb) # (batch_size, seq_len, hidden_size)
+        emb =self.hwy(emb)  # (batch_size, seq_len, hidden_size)
 
         return emb
 
@@ -284,8 +284,8 @@ class SelfAttention(nn.Module):
             #multihead = torch.cat((att_heads, multihead), dim = 2)
         multihead = Variable(torch.cat(att_heads, dim=2))#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
         ##print("Self Attention Concat MultiHeads = " + str(multihead.size()))
-        out = Variable(torch.matmul(multihead, self.W_o))
-        out = Variable(torch.add(out, self.bias))
+        out = torch.matmul(multihead, self.W_o)
+        out = torch.add(out, self.bias)
         ##print("Self Attention Final Output = " + str(out.size()))
         return out
     
@@ -405,7 +405,7 @@ class EmbeddingEncoder(nn.Module):
         #x = self.conv(x.permute(0,2,1)).permute(0,2,1)
         ##print("Embedding Encoder after conv = " + str(x.size()))
         for i in range(self.n_blocks):
-            x = Variable(self.enc_blocks(x, mask, 1, 1))
+            x = self.enc_blocks(x, mask, 1, 1)
         out = x
         ##print(out[0,0,:])
         return out
@@ -427,19 +427,19 @@ class ModelEncoder(nn.Module):
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M0 Starting")
         for i in range(self.n_blocks):
-            x = Variable(self.enc_blocks[0](x, mask, i*(2+2)+1, 7))
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M0 = x
         #print("M0 shape = " + str(M0.size()))
         ##print(M0[0,0,:])
         ##print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = Variable(self.enc_blocks[0](x, mask, i*(2+2)+1, 7))
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M1 = x
         #print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = Variable(self.enc_blocks[0](x, mask, i*(2+2)+1, 7))
+            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7)
         M2 = x
         #print(M2[0,0,:])
         ##print("Model Encoder Output M0 = " + str(M0.size()))
@@ -483,15 +483,15 @@ class CQAttention(nn.Module):
         ##print("CQ Attention Similarity Matrix = " + str(s.size()))
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        s1 = Variable(masked_softmax(s, q_mask, dim=2))      # (batch_size, c_len, q_len)
-        s2 = Variable(masked_softmax(s, c_mask, dim=1))       # (batch_size, c_len, q_len)
+        s1 = masked_softmax(s, q_mask, dim=2)     # (batch_size, c_len, q_len)
+        s2 = masked_softmax(s, c_mask, dim=1)      # (batch_size, c_len, q_len)
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        a = Variable(torch.bmm(s1, q))
+        a = torch.bmm(s1, q)
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = Variable(torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c))
+        b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
 
-        x = Variable(torch.cat([c, a, c * a, c * b], dim=2))  # (bs, c_len, 4 * hid_size)
+        x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
         x = F.dropout(x, self.drop_prob, self.training)
         ##print("CQ Attention Output = " + str(x.size()))
         ##print(x[0,0,:])
@@ -513,10 +513,10 @@ class CQAttention(nn.Module):
         q = F.dropout(q, self.drop_prob, self.training)  # (bs, q_len, hid_size)
 
         # Shapes: (batch_size, c_len, q_len)
-        s0 = Variable(torch.matmul(c, self.c_weight).expand([-1, -1, q_len]))
-        s1 = Variable(torch.matmul(q, self.q_weight).transpose(1, 2)\
-                                           .expand([-1, c_len, -1]))
-        s2 = Variable(torch.matmul(c * self.cq_weight, q.transpose(1, 2)))
+        s0 = torch.matmul(c, self.c_weight).expand([-1, -1, q_len])
+        s1 = torch.matmul(q, self.q_weight).transpose(1, 2)\
+                                           .expand([-1, c_len, -1])
+        s2 = torch.matmul(c * self.cq_weight, q.transpose(1, 2))
         s = s0 + s1 + s2 + self.bias
 
         return s
@@ -538,8 +538,8 @@ class QANetOutput(nn.Module):
 
     def forward(self, M0, M1, M2, mask):
         # Shapes: (batch_size, seq_len, 1)
-        logits_1 = Variable(self.W1(torch.cat([M0, M1], dim=-1)))
-        logits_2 = Variable(self.W2(torch.cat([M0, M2], dim=-1)))
+        logits_1 = self.W1(torch.cat([M0, M1], dim=-1))
+        logits_2 = self.W2(torch.cat([M0, M2], dim=-1))
         ##print("QANet Output logits_1 = " + str(logits_1.size()))
         ##print("QANet Output logits_2 = " + str(logits_2.size()))
         # Shapes: (batch_size, seq_len)
