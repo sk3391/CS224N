@@ -7,7 +7,7 @@ Author:
 import layers_qanet
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
+
 
 
 class QANet(nn.Module):
@@ -81,8 +81,8 @@ class QANet(nn.Module):
     def getconvmask(self, size):
         M=11
         m = (M-1)//2
-        mask = Variable(torch.zeros(size+m).type(torch.float32))
-        ones = Variable(torch.ones(2*m + 1).type(torch.float32))
+        mask = torch.zeros(size+m).type(torch.float32).cuda() 
+        ones = torch.ones(2*m + 1).type(torch.float32).cuda() 
         mask[:2*m+1] = ones
         convmask = torch.stack([self.roll(mask,i) for i in range(size+m)])
         convmask = convmask[:,m:]
