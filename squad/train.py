@@ -189,7 +189,8 @@ def evaluate(model, data_loader, device, eval_file, max_len, use_squad_v2):
             # Forward
             log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
             y1, y2 = y1.to(device), y2.to(device)
-            loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
+            #loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
+            loss = F.cross_entropy(log_p1, y1) + F.cross_entropy(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
 
             # Get F1 and EM scores
