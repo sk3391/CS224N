@@ -270,14 +270,13 @@ class SelfAttention(nn.Module):
         #print("n = " + str(n))
         for h in range(self.n_heads):
             out = []
-            V = []
-            newmask = []
             Q = torch.add(torch.matmul(x, self.W_q[h]), self.bias)
+            newmask = Variable(torch.stack([mask for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2))
+            V = Variable(torch.stack([torch.add(torch.matmul(x, self.W_v[k]), self.bias) for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2,3))
             #print("Self Attention Q_h = " + str(Q.size()))
             for k in range(max(0,h-n), min(h+n+1,self.n_heads)):
                 ###print("Self Attention Q = " + str(Q.size()))
                 K = torch.add(torch.matmul(x, self.W_k[k]), self.bias)
-                Vi = torch.add(torch.matmul(x, self.W_v[k]), self.bias)
                 #print("Self Attention K = " + str(K.size()))
                 #print("Self Attention Vi = " + str(Vi.size()))
                 energy = torch.bmm(Q, K.permute(0,2,1))
@@ -286,18 +285,14 @@ class SelfAttention(nn.Module):
                 energy = torch.mul(energy, normalize)
                 #print("Energy Normalize k = " + str(energy.size()))
                 out.append(energy)
-                V.append(Vi)
-                newmask.append(mask)
             energy = torch.stack(out).permute(1,0,2,3)
             #print("Stacked Energy = " + str(energy.size()))
-            V = torch.stack(V).permute(1,0,2,3)
             #print("Stacked V = " + str(V.size()))
             energy *= convmask
             #print("Convolved Energy = " + str(energy.size()))
             (bs, nh, sl, dk) = energy.size()
             energy = energy.contiguous().view(bs, nh*sl, dk).permute(0,2,1)
             #print("Convolved Energy Ready for Softmax = " + str(energy.size()))
-            newmask = torch.stack(newmask).permute(1,0,2)
             #print("New Mask Ready for Softmax = " + str(newmask.size()))
             newmask = newmask.contiguous().view(bs, nh*sl)
             alpha = masked_softmax(energy, newmask.view(batch_size, 1, energy.size(2)), dim=2)
@@ -378,7 +373,7 @@ class EncoderBlock(nn.Module):
         self.ffn = FeedForward(self.drop_prob, self.d_filters)
         #self.residual = ResidualBlock(self.drop_prob)
     def forward(self, x, mask, l, blks, convmask):
-        total_layers = (self.n_conv + 1) * blks
+        total_layers = (self.n_conv + 2) * blks
         dropout = self.drop_prob
         # Positional Encoding Block
         out = self.pos_enc(x)
