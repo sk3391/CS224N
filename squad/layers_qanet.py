@@ -276,7 +276,7 @@ class SelfAttention(nn.Module):
     
     def forward(self, x, mask, convmask):
         batch_size, sentence_length, _ = x.size()
-        att_heads = torch.Tensor()#.cuda() #, device = self.device)
+        att_heads = torch.Tensor().cuda() #, device = self.device)
         #multihead = torch.zeros(batch_size, sentence_length, 0)
         normalize = 1 / math.sqrt(self.d_k)
         N=3
@@ -293,7 +293,6 @@ class SelfAttention(nn.Module):
         
         for h in range(self.n_heads):
             n_h = min(h+n+1,self.n_heads) - max(0,h-n)
-            out = torch.Tensor()
             newmask = torch.cat((mask, mask, mask),dim=-1) if n_h == 3 else torch.cat((mask,mask), dim=-1)# for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2)            
             #V = (torch.cat(Vi, Vi, Vi) if n_h == 3 else torch.cat(Vi,Vi)).permute(1,0,2,3)
             #V = torch.stack([ for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2,3)
