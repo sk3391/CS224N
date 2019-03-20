@@ -175,20 +175,6 @@ class PositionalEncoding(nn.Module):
         signal = self.get_timing_signal(length, channels, min_timescale, max_timescale)
         x = (x + signal.to(x))#.transpose(1, 2)
         ##print("Final Embedding = " + str(x.size()))
-#        #print("positional encoding input = " + str(x.size()))
-#        batch_size = x.size(0)
-#        length = x.size(1)
-#        position = torch.arange(0, length).type(torch.float32).unsqueeze(1)
-#        #print("position = " + str(position.size()))
-#        #print("frequencies = " + str(self.frequencies.size()))
-#        pos_enc = torch.zeros(batch_size, self.d_filters, length)
-#        pos_enc[:, :, 0::2] = torch.sin(position * self.frequencies)
-#        pos_enc[:, :, 1::2] = torch.cos(position * self.frequencies)
-#        ####print("positional encoding = " + str(pos_enc.size()))
-#        pos_enc = Variable(pos_enc, requires_grad=False).permute(0,2,1)
-#        x = F.dropout(x + pos_enc, self.drop_prob, self.training)
-        ##print(x[0,0,:])
-        ####print("Final Embedding = " + str(x.size()))
         return x
     
     def get_timing_signal(self, length, channels, min_timescale=1.0, max_timescale=1.0e4):
@@ -243,26 +229,10 @@ class SelfAttention(nn.Module):
         self.d_v = d_filters // n_heads
         self.d_k = d_filters // n_heads
         self.drop_prob = drop_prob
-#        self.W_q = nn.ParameterList()
-#        self.W_k = nn.ParameterList()
-#        self.W_v = nn.ParameterList()
-#        for i in range(n_heads):
-#            W_q = nn.Parameter(torch.zeros(d_filters, self.d_k))
-#            nn.init.xavier_uniform_(W_q)
-#            self.W_q.append(W_q)
-#            W_k = nn.Parameter(torch.zeros(d_filters, self.d_k))
-#            nn.init.xavier_uniform_(W_k)
-#            self.W_k.append(W_k)
-#            W_v = nn.Parameter(torch.zeros(d_filters, self.d_v))
-#            nn.init.xavier_uniform_(W_v)
-#            self.W_v.append(W_v)
         self.W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
-        nn.init.xavier_uniform_(self.W_o)
-#        self.bias = nn.Parameter(torch.zeros(1))
-        
+        nn.init.xavier_uniform_(self.W_o)        
         self.mem_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters*2, kernel_size=1)
         self.query_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters, kernel_size=1)
-
         bias = torch.empty(1)
         nn.init.constant_(bias, 0)
         self.bias = nn.Parameter(bias)
@@ -276,14 +246,11 @@ class SelfAttention(nn.Module):
     
     def forward(self, x, mask, convmask):
         batch_size, sentence_length, _ = x.size()
-        att_heads = torch.Tensor().cuda() #, device = self.device)
-        #multihead = torch.zeros(batch_size, sentence_length, 0)
+        att_heads = torch.Tensor().cuda() 
         normalize = 1 / math.sqrt(self.d_k)
         N=3
         n = (N-1)//2
-        #print("Conv Mask convmask = " + str(convmask.size()))
-        #print("n = " + str(n))
-
+        
         memory = self.mem_conv(x.permute(0,2,1))
         query = self.query_conv(x.permute(0,2,1))
         memory = memory.transpose(1, 2)
@@ -293,39 +260,14 @@ class SelfAttention(nn.Module):
         
         for h in range(self.n_heads):
             n_h = min(h+n+1,self.n_heads) - max(0,h-n)
-            newmask = torch.cat((mask, mask, mask),dim=-1) if n_h == 3 else torch.cat((mask,mask), dim=-1)# for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2)            
-            #V = (torch.cat(Vi, Vi, Vi) if n_h == 3 else torch.cat(Vi,Vi)).permute(1,0,2,3)
-            #V = torch.stack([ for k in range(max(0,h-n), min(h+n+1,self.n_heads))]).permute(1,0,2,3)
-            #print("Self Attention Q_h = " + str(Q.size()))
-#            q = Q[:,h:h+1,:,:]
-#            print("q size" + str(q.size()))
-#            k = K[:, max(0,h-n):min(h+n+1,self.n_heads),:,:]
-#            print("k size" + str(k.size()))
             energy = torch.mul(torch.matmul(Q[:,h:h+1,:,:], K[:, max(0,h-n):min(h+n+1,self.n_heads),:,:].permute(0,1,3,2)), normalize)
-#            for k in range(max(0,h-n), min(h+n+1,self.n_heads)):
-#                ###print("Self Attention Q = " + str(Q.size()))
-#                K = torch.add(torch.matmul(x, self.W_k[k]), self.bias)
-#                Vi = torch.add(torch.matmul(x, self.W_v[k]), self.bias).view(1, batch_size, sentence_length, self.d_v)
-#                #print("Self Attention K = " + str(K.size()))
-#                #print("Self Attention Vi = " + str(Vi.size()))
-#                energy = torch.bmm(Q, K.permute(0,2,1))
-#                #print("Energy k = " + str(energy.size()))
-#                ###print("Self Attention QK.T = " + str(out.size()))
-#                energy = torch.mul(energy, normalize).view(1, batch_size, sentence_length, sentence_length)
-#                #print("Energy Normalize k = " + str(energy.size()))\
-#                V = torch.cat((V, Vi), dim=0)
-#                out = torch.cat((out, energy), dim=0)
-#            energy = out.permute(1,0,2,3)
-#            V = V.permute(1,0,2,3)
-            #print("Stacked Energy = " + str(energy.size()))
-            #print("Stacked V = " + str(V.size()))
             energy = torch.mul(energy, convmask)
             #print("Convolved Energy = " + str(energy.size()))
             (bs, nh, sl, dk) = energy.size()
             energy = energy.contiguous().view(bs, nh*sl, dk).permute(0,2,1)
             #print("Convolved Energy Ready for Softmax = " + str(energy.size()))
             #print("New Mask Ready for Softmax = " + str(newmask.size()))
-            newmask = newmask.contiguous().view(bs, nh*sl)
+            newmask = (torch.cat((mask, mask, mask),dim=-1) if n_h == 3 else torch.cat((mask,mask), dim=-1)).contiguous().view(bs, nh*sl)       
             alpha = masked_softmax(energy, newmask.view(batch_size, 1, energy.size(2)), dim=2)
             #print("Alpha after softmax = " + str(alpha.size()))
             alpha = alpha.view(bs, sl, nh, dk).permute(0, 2, 1, 3)
@@ -335,11 +277,6 @@ class SelfAttention(nn.Module):
             y = y.contiguous().view(bs, nh, sl, v.size(3)).sum(dim = 1)
             #print("Summing up to get y = " + str(y))
             att_heads = torch.cat((att_heads, y), dim=2)
-        #print("Self Attention (softmax(QK.T/sqrt(d_k)))V = " + str(att_heads.size()))
-        #print(att_heads)
-            #multihead = torch.cat((att_heads, multihead), dim = 2)
-        #multihead = torch.cat(att_heads, dim=2)#att_heads.permute(1,2,0,3).contiguous().view(batch_size, sentence_length, -1)
-        ###print("Self Attention Concat MultiHeads = " + str(multihead.size()))
         out = torch.matmul(att_heads, self.W_o)
         out = torch.add(out, self.bias)
         ###print("Self Attention Final Output = " + str(out.size()))
