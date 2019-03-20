@@ -162,7 +162,7 @@ class HighwayEncoder(nn.Module):
         
 class PositionalEncoding(nn.Module):
     """Initializing Positional Encoding Layer"""
-    def __init__(self, d_filters, drop_prob, min_timescale=1.0, max_timescale=1.0e4):
+    def __init__(self, d_filters, drop_prob):
         super(PositionalEncoding, self).__init__()
         self.d_filters = d_filters
         self.drop_prob = drop_prob
@@ -171,24 +171,20 @@ class PositionalEncoding(nn.Module):
         ##print("positional encoding input = " + str(x.size()))
         x = x#.transpose(1, 2)
         length = x.size()[1]
-        channels = x.size()[2]
-        signal = self.get_timing_signal(length, channels, min_timescale, max_timescale)
-        x = (x + signal.to(x))#.transpose(1, 2)
+        wv = x.size()[2]
+        pos_emb = self.pos_enc(length, wv)
+        x = x + pos_emb.to(x)
         ##print("Final Embedding = " + str(x.size()))
         return x
     
-    def get_timing_signal(self, length, channels, min_timescale=1.0, max_timescale=1.0e4):
-        position = torch.arange(length).type(torch.float32)
-        num_timescales = channels // 2
-        log_timescale_increment = (math.log(float(max_timescale) / float(min_timescale)) / (float(num_timescales)-1))
-        inv_timescales = min_timescale * torch.exp(
-                torch.arange(num_timescales).type(torch.float32) * -log_timescale_increment)
-        scaled_time = position.unsqueeze(1) * inv_timescales.unsqueeze(0)
-        signal = torch.cat([torch.sin(scaled_time), torch.cos(scaled_time)], dim = 1)
-        m = nn.ZeroPad2d((0, (channels % 2), 0, 0))
-        signal = m(signal)
-        signal = signal.view(1, length, channels)
-        return signal
+    def pos_enc(self, length, wv, min_ts=1.0, max_ts=1.0e4):
+        pos = torch.arange(length).type(torch.float32)
+        inv_ts = min_ts * torch.exp(torch.arange(wv // 2).type(torch.float32) * -(math.log(float(max_ts) / float(min_ts)) / (float(wv // 2)-1)))
+        freq = pos.unsqueeze(1) * inv_ts.unsqueeze(0)
+        pos_emb = torch.cat([torch.sin(freq), torch.cos(freq)], dim = 1)
+        m = nn.ZeroPad2d((0, (wv % 2), 0, 0))
+        pos_emb = m(pos_emb).view(1, length, wv)
+        return pos_emb
 
 class DepthSepCNN(nn.Module):
     def __init__(self, drop_prob, in_channels, d_filters = 128, kernel_size=7):
@@ -231,18 +227,15 @@ class SelfAttention(nn.Module):
         self.drop_prob = drop_prob
         self.W_o = nn.Parameter(torch.zeros(d_filters, self.d_v * n_heads))
         nn.init.xavier_uniform_(self.W_o)        
-        self.mem_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters*2, kernel_size=1)
-        self.query_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters, kernel_size=1)
+        self.kv_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters*2, kernel_size=1)
+        self.q_conv = nn.Conv1d(in_channels=d_filters, out_channels=d_filters, kernel_size=1)
         bias = torch.empty(1)
         nn.init.constant_(bias, 0)
         self.bias = nn.Parameter(bias)
         
-    def split_last_dim(self, x, n):
-        old_shape = list(x.size())
-        last = old_shape[-1]
-        new_shape = old_shape[:-1] + [n] + [last // n if last else None]
-        ret = x.view(new_shape)
-        return ret.permute(0, 2, 1, 3)
+    def get_heads(self, x, n):
+        open_x = list(x.size())[:-1] + [n] + [list(x.size())[-1] // n if list(x.size())[-1] else None]
+        return x.view(open_x).permute(0, 2, 1, 3)
     
     def forward(self, x, mask, convmask):
         batch_size, sentence_length, _ = x.size()
@@ -251,12 +244,10 @@ class SelfAttention(nn.Module):
         N=3
         n = (N-1)//2
         
-        memory = self.mem_conv(x.permute(0,2,1))
-        query = self.query_conv(x.permute(0,2,1))
-        memory = memory.transpose(1, 2)
-        query = query.transpose(1, 2)
-        Q = self.split_last_dim(query, self.n_heads)
-        K, V = [self.split_last_dim(tensor, self.n_heads) for tensor in torch.split(memory, self.d_filters, dim=2)]
+        kv = self.kv_conv(x.permute(0,2,1)).transpose(1, 2)
+        q = self.q_conv(x.permute(0,2,1)).transpose(1, 2)
+        Q = self.get_heads(q, self.n_heads)
+        K, V = [self.get_heads(s, self.n_heads) for s in torch.split(kv, self.d_filters, dim=2)]
         
         for h in range(self.n_heads):
             n_h = min(h+n+1,self.n_heads) - max(0,h-n)
@@ -351,17 +342,17 @@ class EncoderBlock(nn.Module):
         for i in range(self.n_conv):
             residual = out
             out = self.layernorm[i](out)
-            if (i) % 2 == 0:
+            if i % 2 == 0:
                 out = F.dropout(out, p=dropout, training=self.training)
             out = self.conv[i](out.permute(0,2,1)).permute(0,2,1)
-            out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
+            out = self.stoch_drop(out, residual, dropout*float(l)/total_layers)
             l += 1
         # Self Attention Block
         residual = out
         out = self.layernorm[-2](out)
         out = F.dropout(out, p=dropout, training=self.training)
         out= self.self_attention(out, mask, convmask)
-        out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
+        out = self.stoch_drop(out, residual, dropout*float(l)/total_layers)
         l += 1
         ##print((out.permute(0,2,1))[0,0,:])
         ##print((out.permute(0,2,1)).size())
@@ -370,13 +361,12 @@ class EncoderBlock(nn.Module):
         out = self.layernorm[-1](out)
         out = F.dropout(out, p=dropout, training=self.training)
         out = self.ffn(out)
-        out = self.layer_dropout(out, residual, dropout*float(l)/total_layers)
+        out = self.stoch_drop(out, residual, dropout*float(l)/total_layers)
         return out
     
-    def layer_dropout(self, inputs, residual, dropout):
+    def stoch_drop(self, inputs, residual, dropout):
         if self.training == True:
-            pred = torch.empty(1).uniform_(0,1) < dropout
-            if pred:
+            if torch.empty(1).uniform_(0,1) < dropout:
                 return residual
             else:
                 return F.dropout(inputs, dropout, training=self.training) + residual
@@ -421,19 +411,19 @@ class ModelEncoder(nn.Module):
         x = F.dropout(x, self.drop_prob, self.training)
         ###print("Model Encoder Output M0 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
+            x = self.enc_blocks[0](x, mask, i*4+1, 7, convmask)
         M0 = x
         ##print("M0 shape = " + str(M0.size()))
         ###print(M0[0,0,:])
         ###print("Model Encoder Output M Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
+            x = self.enc_blocks[0](x, mask, i*4+1, 7, convmask)
         M1 = x
         ##print(M1[0,0,:])
         x = F.dropout(x, self.drop_prob, self.training)
         ###print("Model Encoder Output M2 Starting")
         for i in range(self.n_blocks):
-            x = self.enc_blocks[0](x, mask, i*(2+2)+1, 7, convmask)
+            x = self.enc_blocks[0](x, mask, i*4+1, 7, convmask)
         M2 = x
         ##print(M2[0,0,:])
         ###print("Model Encoder Output M0 = " + str(M0.size()))
