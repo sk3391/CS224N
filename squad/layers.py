@@ -1,7 +1,4 @@
 """Assortment of layers for use in models.py.
-
-Author:
-    Chris Chute (chute@stanford.edu)
 """
 
 import torch
