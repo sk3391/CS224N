@@ -1,13 +1,9 @@
 """Top-level model classes.
 
-Author:
-    Chris Chute (chute@stanford.edu)
 """
-
 import layers
 import torch
-import torch.nn as nn
-
+import torch.nn 
 
 class BiDAF(nn.Module):
     """Baseline BiDAF model for SQuAD.
